@@ -1,3 +1,4 @@
+    // ...existing code...
 package vn.edu.hust.traffic.model.vehicle;
 
 import vn.edu.hust.traffic.behavior.DrivingStrategy;
@@ -16,19 +17,9 @@ public abstract class Vehicle implements Renderable, Updatable {
     protected double direction; // góc hướng di chuyển (độ hoặc radian)
     protected double width;
     protected double height;
-    protected boolean isPriorityVehicle;
+    protected boolean isPriorityVehicle; //Có phải xe ưu tiên không
     protected DrivingStrategy strategy;
 
-    /**
-     * @param id Mã định danh
-     * @param x  Tọa độ x
-     * @param y  Tọa độ y
-     * @param speed Tốc độ
-     * @param direction Hướng di chuyển
-     * @param width Chiều rộng xe
-     * @param height Chiều cao xe
-     * @param isPriorityVehicle Có phải xe ưu tiên không
-     */
     public Vehicle(String id, double x, double y, double speed, double direction, double width, double height, boolean isPriorityVehicle) {
         this.id = id;
         this.x = x;
