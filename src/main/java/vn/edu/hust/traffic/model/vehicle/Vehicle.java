@@ -58,6 +58,18 @@ public abstract class Vehicle implements Renderable, Updatable {
 
     public void setX(double x) { this.x = x; }
     public void setY(double y) { this.y = y; }
+
+    // Hỗ trợ update vật lý theo thời gian
+    public void update(double dt) {
+        movePhysically(dt);
+    }
+
+    // Override phương thức Updatable (không có tham số)
+    @Override
+    public void update() {
+        // Có thể gọi update với dt mặc định hoặc bỏ trống
+        // update(1.0); // ví dụ: dt = 1.0
+    }
     public void setSpeed(double speed) { this.speed = speed; }
     public void setDirection(double direction) { this.direction = direction; }
     public void setWidth(double width) { this.width = width; }

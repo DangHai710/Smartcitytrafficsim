@@ -44,9 +44,9 @@ public class TrafficController {
      * Cập nhật trạng thái mô phỏng (gọi update cho từng phương tiện)
      * @param dt khoảng thời gian cập nhật (delta time)
      */
-    public void updateSimulation(double dt) {
+    public void updateSimulation() {
         for (Vehicle v : vehicles) {
-            v.update(dt);
+            v.update();
         }
     }
 }
