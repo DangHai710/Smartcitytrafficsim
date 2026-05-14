@@ -1,13 +1,16 @@
 package vn.edu.hust.traffic.controller;
 
 import vn.edu.hust.traffic.model.vehicle.Vehicle;
-import vn.edu.hust.traffic.model.map.Intersection;
 import vn.edu.hust.traffic.model.map.CrossIntersection;
 import vn.edu.hust.traffic.model.map.TrafficLight;
 import vn.edu.hust.traffic.model.vehicle.Car;
+import vn.edu.hust.traffic.model.vehicle.Motorbike;
+import vn.edu.hust.traffic.model.vehicle.Bus;
+import vn.edu.hust.traffic.model.vehicle.Ambulance;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 /**
  * Bộ điều khiển giao thông 
@@ -16,75 +19,140 @@ import java.util.List;
 public class TrafficController {
     private static final int WIDTH = 800;
     private static final int HEIGHT = 600;
-    private double[] carSpawnTimers = new double[] {0, 0, 0, 0};
-    private int carCount = 2;
+    
+    // Khoảng cách từ tâm đường đến tâm các làn (3 làn mỗi bên)
+    private static final double LANE_PRIORITY = 15;
+    private static final double LANE_CAR = 40;
+    private static final double LANE_BIKE = 65;
+    
+    private double[] spawnTimers = new double[] {0, 0, 0, 0};
+    private int vehicleCount = 0;
     private CrossIntersection intersection;
     private List<TrafficLight> lights;
-    private List<Car> cars;
+    private List<Vehicle> vehicles;
+    private IntersectionPhaseController phaseController;
+    private Random random = new Random();
+    private boolean autoSpawnEnabled = true;
 
-    // Đổi access modifier thành public để View có thể tạo mới Controller
     public TrafficController() {
         setupSimulation();
     }
 
     private void setupSimulation() {
         lights = new ArrayList<>();
-        for (int i = 0; i < 4; i++) {
-            lights.add(new TrafficLight());
-        }
+        // 0, 1: Hướng Ngang | 2, 3: Hướng Dọc
+        // Trạng thái ban đầu sẽ do phaseController khởi tạo
+        lights.add(new TrafficLight());
+        lights.add(new TrafficLight());
+        lights.add(new TrafficLight());
+        lights.add(new TrafficLight());
+
+        // IntersectionPhaseController đồng bộ 4 đèn — hướng ngang xanh trước
+        phaseController = new IntersectionPhaseController(lights);
+        
         intersection = new CrossIntersection("cross1", WIDTH / 2.0, HEIGHT / 2.0, lights);
-        cars = new ArrayList<>();
-        cars.add(new Car("car1", 100, HEIGHT / 2.0 - 30, 80, 0, 40, 20, false));
-        cars.add(new Car("car2", WIDTH / 2.0 + 30, 100, 80, Math.PI / 2, 40, 20, false));
+        vehicles = new ArrayList<>();
     }
 
     public void update(double dt) {
-        // Cập nhật trạng thái đèn giao thông
-        for (TrafficLight light : lights) {
-            light.update(dt);
-        }
+        // Cập nhật phase đèn (đồng bộ hóa cả 4 đèn)
+        phaseController.update(dt);
 
-        // Sinh xe mới mỗi 13 giây ở mỗi hướng
-        for (int i = 0; i < 4; i++) {
-            carSpawnTimers[i] += dt;
-            if (carSpawnTimers[i] >= 13.0) {
-                carSpawnTimers[i] = 0;
-                carCount++;
-                // Hướng 0: trái sang phải
-                if (i == 0) {
-                    cars.add(new Car("carL"+carCount, 100, HEIGHT / 2.0 - 30, 80, 0, 40, 20, false));
-                }
-                // Hướng 1: phải sang trái
-                else if (i == 1) {
-                    cars.add(new Car("carR"+carCount, WIDTH - 100, HEIGHT / 2.0 + 30, 80, Math.PI, 40, 20, false));
-                }
-                // Hướng 2: trên xuống
-                else if (i == 2) {
-                    cars.add(new Car("carT"+carCount, WIDTH / 2.0 + 30, 100, 80, Math.PI / 2, 40, 20, false));
-                }
-                // Hướng 3: dưới lên
-                else if (i == 3) {
-                    cars.add(new Car("carB"+carCount, WIDTH / 2.0 - 30, HEIGHT - 100, 80, -Math.PI / 2, 40, 20, false));
+        // Sinh xe mới mỗi 5 giây (nếu auto spawn được bật)
+        if (autoSpawnEnabled) {
+            for (int i = 0; i < 4; i++) {
+                spawnTimers[i] += dt;
+                if (spawnTimers[i] >= 5.0) {
+                    spawnTimers[i] = 0;
+                    spawnVehicle(i);
                 }
             }
         }
 
-        // Cập nhật trạng thái xe (logic dừng/đi sẽ chuyển sang Car)
-        for (Car car : cars) {
-            car.update(dt, cars, lights, WIDTH, HEIGHT);
+        for (Vehicle v : vehicles) {
+            v.update(dt, vehicles, lights, WIDTH, HEIGHT);
         }
+        
+        // Trình dọn dẹp bộ nhớ: Huỷ ngay những phương tiện đã khuất lấp khỏi màn hình để bảo vệ Heap tĩnh
+        vehicles.removeIf(v -> v.getX() < -200 || v.getX() > WIDTH + 200 || 
+                               v.getY() < -200 || v.getY() > HEIGHT + 200);
+                               
         intersection.update();
     }
 
-    public List<Car> getCars() {
-        return cars;
+    private void spawnVehicle(int directionIdx) {
+        vehicleCount++;
+        double speed = 60 + random.nextInt(40);
+        double x = 0, y = 0, dir = 0;
+        
+        int type = random.nextInt(100);
+        Vehicle v;
+        
+        double offset = 0; 
+        if (type < 10) offset = LANE_PRIORITY; 
+        else if (type < 50) offset = LANE_CAR; 
+        else offset = LANE_BIKE; 
+
+        switch (directionIdx) {
+            case 0: // Trái -> Phải (Phía dưới tâm đường y > 300)
+                x = -50; y = HEIGHT / 2.0 + offset; dir = 0; break;
+            case 1: // Phải -> Trái (Phía trên tâm đường y < 300)
+                x = WIDTH + 50; y = HEIGHT / 2.0 - offset; dir = Math.PI; break;
+            case 2: // Trên -> Dưới (Phía bên trái tâm đường x < 400)
+                x = WIDTH / 2.0 - offset; y = -50; dir = Math.PI / 2; break;
+            case 3: // Dưới -> Trên (Phía bên phải tâm đường x > 400)
+                x = WIDTH / 2.0 + offset; y = HEIGHT + 50; dir = -Math.PI / 2; break;
+        }
+
+        if (type < 10) {
+            boolean isEmergency = random.nextBoolean();
+            v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, isEmergency);
+        }
+        else if (type < 20) v = new Bus("Bus" + vehicleCount, x, y, speed, dir);
+        else if (type < 50) v = new Car("Car" + vehicleCount, x, y, speed, dir, 40, 20, false);
+        else v = new Motorbike("Bike" + vehicleCount, x, y, speed, dir, false);
+        
+        vehicles.add(v);
     }
 
-    public List<TrafficLight> getLights() {
-        return lights;
+    public void spawnVehicleManually(String typeStr) {
+        int dirIdx = random.nextInt(4);
+        double speed = 60 + random.nextInt(40);
+        double offset = 0;
+        
+        if (typeStr.equals("Emergency") || typeStr.equals("Ambulance")) offset = LANE_PRIORITY;
+        else if (typeStr.equals("Bus") || typeStr.equals("Car")) offset = LANE_CAR;
+        else offset = LANE_BIKE;
+
+        double x = 0, y = 0, dir = 0;
+        switch (dirIdx) {
+            case 0: x = -50; y = HEIGHT / 2.0 + offset; dir = 0; break;
+            case 1: x = WIDTH + 50; y = HEIGHT / 2.0 - offset; dir = Math.PI; break;
+            case 2: x = WIDTH / 2.0 - offset; y = -50; dir = Math.PI / 2; break;
+            case 3: x = WIDTH / 2.0 + offset; y = HEIGHT + 50; dir = -Math.PI / 2; break;
+        }
+
+        vehicleCount++;
+        Vehicle v = null;
+        switch (typeStr) {
+            case "Emergency": v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, true); break;
+            case "Ambulance": v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, false); break;
+            case "Bus": v = new Bus("Bus" + vehicleCount, x, y, speed, dir); break;
+            case "Car": v = new Car("Car" + vehicleCount, x, y, speed, dir, 40, 20, false); break;
+            case "Motorbike": v = new Motorbike("Bike" + vehicleCount, x, y, speed, dir, false); break;
+        }
+        
+        if (v != null) vehicles.add(v);
     }
 
-    public CrossIntersection getIntersection() {
-        return intersection;
+    public void toggleAutoSpawn() {
+        autoSpawnEnabled = !autoSpawnEnabled;
     }
+
+    public boolean isAutoSpawnEnabled() { return autoSpawnEnabled; }
+
+    public List<Vehicle> getVehicles() { return vehicles; }
+    public List<TrafficLight> getLights() { return lights; }
+    public CrossIntersection getIntersection() { return intersection; }
+    public IntersectionPhaseController getPhaseController() { return phaseController; }
 }

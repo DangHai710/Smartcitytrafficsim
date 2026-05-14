@@ -79,7 +79,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>vn.edu.hust.traffic.view.SimulationWindow</mainClass>
+                    <mainClass>vn.edu.hust.traffic.Main</mainClass>
                 </configuration>
             </plugin>
         </plugins>
