@@ -7,6 +7,8 @@ import vn.edu.hust.traffic.model.vehicle.Car;
 import vn.edu.hust.traffic.model.vehicle.Motorbike;
 import vn.edu.hust.traffic.model.vehicle.Bus;
 import vn.edu.hust.traffic.model.vehicle.Ambulance;
+import vn.edu.hust.traffic.model.vehicle.FireTruck;
+
 
 import java.util.ArrayList;
 import java.util.List;
@@ -88,10 +90,15 @@ public class TrafficController {
         int type = random.nextInt(100);
         Vehicle v;
         
-        double offset = 0; 
-        if (type < 10) offset = LANE_PRIORITY; 
-        else if (type < 50) offset = LANE_CAR; 
-        else offset = LANE_BIKE; 
+        int turnRand = random.nextInt(10);
+        int turnIntention = 0;
+        if (turnRand < 2) turnIntention = 1; // 20% rẽ trái
+        else if (turnRand < 4) turnIntention = 2; // 20% rẽ phải
+
+        double offset = 0;
+        if (turnIntention == 1) offset = LANE_PRIORITY; // Sát tim đường để rẽ trái
+        else if (turnIntention == 2) offset = LANE_BIKE; // Sát vỉa hè để rẽ phải
+        else offset = LANE_CAR; // Đi thẳng ở làn giữa 
 
         switch (directionIdx) {
             case 0: // Trái -> Phải (Phía dưới tâm đường y > 300)
@@ -104,25 +111,37 @@ public class TrafficController {
                 x = WIDTH / 2.0 + offset; y = HEIGHT + 50; dir = -Math.PI / 2; break;
         }
 
-        if (type < 10) {
+        if (type < 5) {
+            // FireTruck: always priority vehicle
+            v = new FireTruck("Fire" + vehicleCount, x, y, speed, dir);
+        } else if (type < 10) {
             boolean isEmergency = random.nextBoolean();
             v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, isEmergency);
+        } else if (type < 20) {
+            v = new Bus("Bus" + vehicleCount, x, y, speed, dir);
+        } else if (type < 50) {
+            v = new Car("Car" + vehicleCount, x, y, speed, dir, 40, 20, false);
+        } else {
+            v = new Motorbike("Bike" + vehicleCount, x, y, speed, dir, false);
         }
-        else if (type < 20) v = new Bus("Bus" + vehicleCount, x, y, speed, dir);
-        else if (type < 50) v = new Car("Car" + vehicleCount, x, y, speed, dir, 40, 20, false);
-        else v = new Motorbike("Bike" + vehicleCount, x, y, speed, dir, false);
         
+        v.setTurnIntention(turnIntention);
+
         vehicles.add(v);
     }
 
     public void spawnVehicleManually(String typeStr) {
         int dirIdx = random.nextInt(4);
         double speed = 60 + random.nextInt(40);
+        int turnRand = random.nextInt(10);
+        int turnIntention = 0;
+        if (turnRand < 2) turnIntention = 1;
+        else if (turnRand < 4) turnIntention = 2;
+
         double offset = 0;
-        
-        if (typeStr.equals("Emergency") || typeStr.equals("Ambulance")) offset = LANE_PRIORITY;
-        else if (typeStr.equals("Bus") || typeStr.equals("Car")) offset = LANE_CAR;
-        else offset = LANE_BIKE;
+        if (turnIntention == 1) offset = LANE_PRIORITY;
+        else if (turnIntention == 2) offset = LANE_BIKE;
+        else offset = LANE_CAR;
 
         double x = 0, y = 0, dir = 0;
         switch (dirIdx) {
@@ -137,12 +156,16 @@ public class TrafficController {
         switch (typeStr) {
             case "Emergency": v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, true); break;
             case "Ambulance": v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, false); break;
+            case "FireTruck": v = new FireTruck("Fire" + vehicleCount, x, y, speed, dir); break;
             case "Bus": v = new Bus("Bus" + vehicleCount, x, y, speed, dir); break;
             case "Car": v = new Car("Car" + vehicleCount, x, y, speed, dir, 40, 20, false); break;
             case "Motorbike": v = new Motorbike("Bike" + vehicleCount, x, y, speed, dir, false); break;
         }
         
-        if (v != null) vehicles.add(v);
+        if (v != null) {
+            v.setTurnIntention(turnIntention);
+            vehicles.add(v);
+        }
     }
 
     public void toggleAutoSpawn() {

@@ -13,6 +13,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     protected double baseSpeed;
     protected boolean passedStopLine = false;
     protected double distToStopLine = Double.MAX_VALUE;
+    protected int turnIntention = 0; // 0: Thẳng, 1: Rẽ Trái, 2: Rẽ Phải
+    protected boolean hasTurned = false;
 
     public Vehicle(String id, double x, double y, double speed, double direction, double width, double height, boolean isPriorityVehicle) {
         this.id = id;
@@ -27,6 +29,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     }
 
     public abstract void movePhysically(double dt);
+
+    public void setTurnIntention(int turn) {
+        this.turnIntention = turn;
+    }
 
     public void update(double dt, List<Vehicle> allVehicles, List<TrafficLight> lights, int screenWidth, int screenHeight) {
         double safeDistance = (width > 30) ? 45 : 25;
@@ -63,10 +69,51 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 break;
         }
 
-        // BƯỚC 1: Quét tìm cứu thương khẩn cấp (Emergency Ambulance) để tiến hành Flee Mode
-        boolean isFleeing = false;
+        // BƯỚC 0.5: Kiểm tra và thực hiện rẽ nếu xe đang ở giữa ngã tư
         double cx = screenWidth / 2.0;
         double cy = screenHeight / 2.0;
+        
+        if (!hasTurned && turnIntention != 0 && passedStopLine) {
+            boolean readyToTurn = false;
+            double targetCoord = 0;
+            
+            // Tính toán tọa độ chính xác để sau khi bẻ lái, xe nằm đúng boong giữa làn
+            if (turnIntention == 1) { // Rẽ trái (vào làn priority offset 15)
+                if (lightIdx == 0) { targetCoord = cx + 15; readyToTurn = (x >= targetCoord); }
+                else if (lightIdx == 1) { targetCoord = cx - 15; readyToTurn = (x <= targetCoord); }
+                else if (lightIdx == 2) { targetCoord = cy + 15; readyToTurn = (y >= targetCoord); }
+                else if (lightIdx == 3) { targetCoord = cy - 15; readyToTurn = (y <= targetCoord); }
+            } else if (turnIntention == 2) { // Rẽ phải (vào làn bike offset 65)
+                if (lightIdx == 0) { targetCoord = cx - 65; readyToTurn = (x >= targetCoord); }
+                else if (lightIdx == 1) { targetCoord = cx + 65; readyToTurn = (x <= targetCoord); }
+                else if (lightIdx == 2) { targetCoord = cy - 65; readyToTurn = (y >= targetCoord); }
+                else if (lightIdx == 3) { targetCoord = cy + 65; readyToTurn = (y <= targetCoord); }
+            }
+            
+            if (readyToTurn) {
+                // Chỉnh thẳng góc tọa độ trục cũ vào đúng quỹ đạo trục mới
+                if (lightIdx == 0 || lightIdx == 1) this.x = targetCoord;
+                else this.y = targetCoord;
+
+                if (turnIntention == 1) { // Rẽ trái
+                    if (lightIdx == 0) direction = -Math.PI/2;
+                    else if (lightIdx == 1) direction = Math.PI/2;
+                    else if (lightIdx == 2) direction = 0;
+                    else if (lightIdx == 3) direction = Math.PI;
+                } else if (turnIntention == 2) { // Rẽ phải
+                    if (lightIdx == 0) direction = Math.PI/2;
+                    else if (lightIdx == 1) direction = -Math.PI/2;
+                    else if (lightIdx == 2) direction = Math.PI;
+                    else if (lightIdx == 3) direction = 0;
+                }
+                hasTurned = true;
+                lightIdx = getLightIdx(direction); // Cập nhật ngay lightIdx mới
+                light = lights.get(lightIdx);
+            }
+        }
+
+        // BƯỚC 1: Quét tìm cứu thương khẩn cấp (Emergency Ambulance) để tiến hành Flee Mode
+        boolean isFleeing = false;
 
         for (Vehicle other : allVehicles) {
             if (other.isPriorityVehicle && other != this) {
@@ -84,9 +131,21 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                         else if (lightIdx == 2) behindDist = this.y - other.y;
                         else if (lightIdx == 3) behindDist = other.y - this.y;
                         
-                        // Cứu thương đang sát đít (từ 0 đến 400px) -> Phải vọt lẹ qua ngã tư để nhường đường!
+                        // Cứu thương đang sát đít (từ 0 đến 400px) -> Lách sang lề phải để nhường đường!
                         if (behindDist > 0 && behindDist < 400) {
                             isFleeing = true;
+                            
+                            // Logic lách nhường đường (dạt ra lề phải của chiều đi)
+                            double shiftSpeed = 40.0 * dt;
+                            if (lightIdx == 0) {
+                                if (this.y < cy + 85) this.y += shiftSpeed;
+                            } else if (lightIdx == 1) {
+                                if (this.y > cy - 85) this.y -= shiftSpeed;
+                            } else if (lightIdx == 2) {
+                                if (this.x > cx - 85) this.x -= shiftSpeed;
+                            } else if (lightIdx == 3) {
+                                if (this.x < cx + 85) this.x += shiftSpeed;
+                            }
                         }
                     }
                 }
@@ -178,6 +237,14 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                     double myEffective = myDistToIntersect - (myPri ? 120 : 0);
                     double otherEffective = otherDistToIntersect - (otherPri ? 120 : 0);
 
+                    // Đèn xanh ưu tiên qua trước so với đèn đỏ (trừ xe ưu tiên)
+                    if (light.getState() == TrafficLight.State.GREEN && !otherPri) {
+                        myEffective -= 1000;
+                    }
+                    if (lights.get(otherLightIdx).getState() == TrafficLight.State.GREEN && !myPri) {
+                        otherEffective -= 1000;
+                    }
+
                     // Ai còn cách xa (hoặc kém ưu tiên) thì sẽ "tự cảm thấy" cần nhường
                     if (myEffective > otherEffective) {
                         iMustYield = true;
@@ -242,13 +309,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         if (shouldStop) {
             this.speed = 0;
         } else {
+            boolean inIntersection = Math.hypot(x - cx, y - cy) < 180;
+            boolean isClear = (Math.abs(currentTargetSpeed - baseSpeed) < 1.0);
+
             if (isPriorityVehicle) {
                 // Tăng bứt tốc ngã tư (Intersection Clear Burst)
-                boolean inIntersection = Math.hypot(x - cx, y - cy) < 180;
-                
-                // Kiểm tra xem hiện tại xe có đang bị kìm hãm tốc độ bởi bất cứ luồng cắt ngang/xe phía trước nào không?
-                boolean isClear = (Math.abs(currentTargetSpeed - baseSpeed) < 1.0);
-                
                 if (inIntersection && isClear) {
                     // Không có chướng ngại vật -> Xe khẩn cấp rít ga phóng 1.5x tốc độ qua ngã tư
                     this.speed = currentTargetSpeed * 1.5; 
@@ -261,10 +326,16 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 }
             } else if (isFleeing) {
                 // Xe dân sự đang hoảng loạn lách đường, vọt lẹ hơn tí nếu trống
-                boolean isClear = (Math.abs(currentTargetSpeed - baseSpeed) < 1.0);
                 this.speed = isClear ? currentTargetSpeed * 1.2 : currentTargetSpeed;
             } else {
-                this.speed = currentTargetSpeed;
+                // Xe dân sự đang đèn xanh đi qua ngã tư thì tăng tốc để thoát nhanh, tránh bị đì
+                if (inIntersection && isClear && light.getState() == TrafficLight.State.GREEN) {
+                    this.speed = currentTargetSpeed * 1.4; // Tăng 40% tốc độ
+                } else if (inIntersection && isClear && passedStopLine) {
+                    this.speed = currentTargetSpeed * 1.2; // Lỡ dở đèn vàng thì rít nhanh cho qua
+                } else {
+                    this.speed = currentTargetSpeed;
+                }
             }
             movePhysically(dt);
         }

@@ -39,6 +39,7 @@ public class SimulationWindow extends Application {
                 case M: controller.spawnVehicleManually("Motorbike"); break;
                 case E: controller.spawnVehicleManually("Emergency"); break;
                 case A: controller.spawnVehicleManually("Ambulance"); break;
+                case F: controller.spawnVehicleManually("FireTruck"); break;
                 case P: controller.toggleAutoSpawn(); break;
                 default: break;
             }
@@ -208,28 +209,9 @@ public class SimulationWindow extends Application {
         gc.setFill(javafx.scene.paint.Color.WHITE);
         gc.fillText("Con lai: " + phaseTimeLeft + "s   |   Xe: " + vehicles.size(), 16, 46);
         
-        String autoStatus = controller.isAutoSpawnEnabled() ? "ON" : "OFF (Manual Mode)";
-        gc.setFill(controller.isAutoSpawnEnabled() ? javafx.scene.paint.Color.LIGHTGREEN : javafx.scene.paint.Color.YELLOW);
-        gc.fillText("Auto Spawn: " + autoStatus + " [P]", 16, 63);
+    
 
-        // Khung hướng dẫn bên phải (Control Panel)
-        gc.setFill(javafx.scene.paint.Color.color(0, 0, 0, 0.6));
-        gc.fillRoundRect(WIDTH - 210, 8, 200, 110, 10, 10);
-        
-        gc.setFill(javafx.scene.paint.Color.WHITE);
-        gc.setFont(Font.font("System", FontWeight.BOLD, 12));
-        gc.fillText("--- CONTROL PANEL ---", WIDTH - 180, 25);
-        gc.setFont(Font.font("System", FontWeight.NORMAL, 12));
-        gc.fillText("[C] Spawn Car", WIDTH - 195, 45);
-        gc.fillText("[B] Spawn Bus", WIDTH - 195, 60);
-        gc.fillText("[M] Spawn Motorbike", WIDTH - 195, 75);
-        
-        gc.setFill(javafx.scene.paint.Color.RED);
-        gc.fillText("[E] Spawn Khan Cap", WIDTH - 195, 90);
-        gc.setFill(javafx.scene.paint.Color.PINK);
-        gc.fillText("[A] Spawn Cuu Thuong", WIDTH - 195, 105);
 
-        // HUD đã được giữ nguyên ở đây, vẽ cuối cùng để đè lên mọi thứ
     }
 
     public static void main(String[] args) { launch(args); }
