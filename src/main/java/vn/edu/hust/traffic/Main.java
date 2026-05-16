@@ -1,8 +1,10 @@
 package vn.edu.hust.traffic;
 
-// Điểm khởi chạy (Người 1)
+import javafx.application.Application;
+import vn.edu.hust.traffic.view.SimulationWindow;
+
 public class Main {
     public static void main(String[] args) {
-        // TODO: Khởi động mô phỏng giao thông
+        Application.launch(SimulationWindow.class, args);
     }
 }

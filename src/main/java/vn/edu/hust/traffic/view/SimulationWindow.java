@@ -28,8 +28,13 @@ public class SimulationWindow extends Application {
     public void start(Stage primaryStage) {
         canvas = new Canvas(WIDTH, HEIGHT);
         gc = canvas.getGraphicsContext2D();
-        Pane root = new Pane(canvas);
-        Scene scene = new Scene(root, WIDTH, HEIGHT);
+        Pane root = new Pane();
+         
+           ControlPanel panel = new ControlPanel();
+           panel.setLayoutX(820);
+panel.setLayoutY(20);
+    root.getChildren().addAll(canvas, panel);
+        Scene scene = new Scene(root, WIDTH + 200, HEIGHT);
 
         setupSimulation();
 
