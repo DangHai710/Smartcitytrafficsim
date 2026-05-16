@@ -1,9 +1,10 @@
 package vn.edu.hust.traffic.utils;
 
+import javafx.scene.image.Image;
+
 public class ImageLoader {
-    // Hàm tải ảnh từ resources/assets/images
-    public static Object loadImage(String name) {
-        // TODO: Cài đặt tải ảnh (JavaFX: Image, Swing: BufferedImage)
-        return null;
-    }
+	public static Image loadImage(String name) {
+		String path = "/assets/images/" + name;
+		return new Image(ImageLoader.class.getResourceAsStream(path));
+	}
 }
