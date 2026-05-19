@@ -6,8 +6,8 @@ package vn.edu.hust.traffic.model.vehicle;
  */
 public class Motorbike extends Vehicle {
     public Motorbike(String id, double x, double y, double speed, double direction, boolean isPriorityVehicle) {
-        // Kích thước nhỏ: 25x12
-        super(id, x, y, speed, direction, 25, 12, isPriorityVehicle);
+        // Kích thước thu nhỏ: 16x8
+        super(id, x, y, speed, direction, 16, 8, isPriorityVehicle);
     }
 
     @Override

@@ -15,6 +15,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     protected double distToStopLine = Double.MAX_VALUE;
     protected int turnIntention = 0; // 0: Thẳng, 1: Rẽ Trái, 2: Rẽ Phải
     protected boolean hasTurned = false;
+    protected final int originalLightIdx;
 
     public Vehicle(String id, double x, double y, double speed, double direction, double width, double height, boolean isPriorityVehicle) {
         this.id = id;
@@ -26,6 +27,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         this.width = width;
         this.height = height;
         this.isPriorityVehicle = isPriorityVehicle;
+        this.originalLightIdx = getLightIdx(direction);
     }
 
     public abstract void movePhysically(double dt);
@@ -34,8 +36,17 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         this.turnIntention = turn;
     }
 
+    /**
+     * Lấy nửa chiều dài xe theo trục di chuyển.
+     * width = chiều dài xe (luôn là chiều dài lớn nhất).
+     */
+    private double getHalfLength() {
+        return width / 2.0;
+    }
+
+
     public void update(double dt, List<Vehicle> allVehicles, List<TrafficLight> lights, int screenWidth, int screenHeight) {
-        double safeDistance = (width > 30) ? 45 : 25;
+        double safeDistance = (width > 30) ? 50 : 30;
         final double SLOW_ZONE = 80.0;
         boolean shouldStop = false;
         double currentTargetSpeed = baseSpeed;
@@ -49,23 +60,24 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         double stopY_BTT = screenHeight / 2.0 + 100;
 
         distToStopLine = Double.MAX_VALUE;
+        double hl = getHalfLength();
 
         switch (lightIdx) {
             case 0: 
-                distToStopLine = stopX_LTR - (x + width / 2.0);
-                passedStopLine = (x + width / 2.0) >= stopX_LTR;
+                distToStopLine = stopX_LTR - (x + hl);
+                passedStopLine = (x + hl) >= stopX_LTR;
                 break;
             case 1: 
-                distToStopLine = (x - width / 2.0) - stopX_RTL;
-                passedStopLine = (x - width / 2.0) <= stopX_RTL;
+                distToStopLine = (x - hl) - stopX_RTL;
+                passedStopLine = (x - hl) <= stopX_RTL;
                 break;
             case 2: 
-                distToStopLine = stopY_TTB - (y + width / 2.0);
-                passedStopLine = (y + width / 2.0) >= stopY_TTB;
+                distToStopLine = stopY_TTB - (y + hl);
+                passedStopLine = (y + hl) >= stopY_TTB;
                 break;
             case 3: 
-                distToStopLine = (y - width / 2.0) - stopY_BTT;
-                passedStopLine = (y - width / 2.0) <= stopY_BTT;
+                distToStopLine = (y - hl) - stopY_BTT;
+                passedStopLine = (y - hl) <= stopY_BTT;
                 break;
         }
 
@@ -121,9 +133,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 
                 // 1. Phân tích bỏ chạy (FLEE) nếu xe cấp cứu ở NGAY SAU LƯNG trong cùng làn 
                 if (otherLightIdx == lightIdx) {
+                    // Mở rộng threshold theo kích thước xe — xe lớn cần threshold rộng hơn
+                    double fleeThreshold = Math.max(16, (this.height + other.height) / 2.0);
                     boolean sameLane = (lightIdx < 2)
-                            ? Math.abs(other.y - this.y) < 12
-                            : Math.abs(other.x - this.x) < 12;
+                            ? Math.abs(other.y - this.y) < fleeThreshold
+                            : Math.abs(other.x - this.x) < fleeThreshold;
                     if (sameLane) {
                         double behindDist = -1;
                         if (lightIdx == 0) behindDist = this.x - other.x;
@@ -152,10 +166,16 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             }
         }
 
-        // BƯỚC 2: Check đèn (Chỉ kiểm tra đèn bình thường, bỏ đi cơ chế ép dừng máy móc)
+        // BƯỚC 2: Check đèn — dùng đèn PHÙ HỢP với ý định rẽ của xe
+        //   turnIntention==0 (thẳng): xem đèn thẳng
+        //   turnIntention==1 (rẽ trái): xem đèn mũi tên rẽ trái
+        //   turnIntention==2 (rẽ phải): luôn GREEN (Right Turn on Red)
+        TrafficLight.State myEffectiveLight = light.getStateForTurn(turnIntention, hasTurned);
+        boolean isRightTurnOnRed = (turnIntention == 2 && !hasTurned);
         boolean mustStopByLight = false;
         if (!isPriorityVehicle && !isFleeing) {
-            if (light.getState() == TrafficLight.State.RED || (light.getState() == TrafficLight.State.YELLOW && !passedStopLine)) {
+            if (myEffectiveLight == TrafficLight.State.RED || 
+                (myEffectiveLight == TrafficLight.State.YELLOW && !passedStopLine)) {
                 mustStopByLight = true;
             }
         }
@@ -168,6 +188,17 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 double ratio = distToStopLine / SLOW_ZONE;
                 currentTargetSpeed = baseSpeed * ratio;
                 if (distToStopLine < 5) shouldStop = true;
+            }
+        }
+
+        // BƯỚC 3.5: Xe rẽ phải khi đèn đỏ — giảm tốc cẩn thận trước ngã tư, không dừng hẳn
+        if (isRightTurnOnRed && !passedStopLine && light.getState() != TrafficLight.State.GREEN) {
+            double cautionSpeed = baseSpeed * 0.4;
+            if (distToStopLine < SLOW_ZONE && distToStopLine > 0) {
+                double ratio = distToStopLine / SLOW_ZONE;
+                currentTargetSpeed = Math.min(currentTargetSpeed, cautionSpeed * ratio + cautionSpeed * 0.3);
+            } else if (distToStopLine <= 0) {
+                currentTargetSpeed = Math.min(currentTargetSpeed, cautionSpeed);
             }
         }
 
@@ -203,17 +234,29 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 else if (otherLightIdx == 2) otherDistToIntersect = intersectY - other.y;
                 else if (otherLightIdx == 3) otherDistToIntersect = other.y - intersectY;
 
-                double CLEARANCE = 40.0;
+                // Clearance phụ thuộc kích thước xe — xe lớn cần vùng lớn hơn
+                double CLEARANCE = Math.max(40.0, Math.max(this.width, other.width) * 0.7);
 
                 // 1. Phá băng giao thông: Ai ĐÃ qua rồi thì thoát ra khỏi vùng ảnh hưởng tuyệt đối!
-                // Giải quyết yêu cầu: "đối với các xe mà đã đi qua rồi k cần phải dừng hay giảm tốc độ với nó"
                 if (myDistToIntersect < -CLEARANCE || otherDistToIntersect < -CLEARANCE) {
                     continue; 
                 }
 
-                // 2. Chống lác (Deadlock anti-freeze): Bỏ qua xe ngoan ngoãn đỗ bên đường chờ đèn đỏ
-                if (other.speed < 0.5 && otherDistToIntersect > 80) {
+                // KHÔNG BAO GIỜ xung đột với xe xuất phát từ cùng một nhánh đường
+                if (this.originalLightIdx == other.originalLightIdx) {
                     continue;
+                }
+
+                // 2. Chống lác (Deadlock anti-freeze): Bỏ qua xe đỗ chờ đèn đỏ
+                //    - Xe đứng yên VÀ còn xa ngã tư (>50px) → chắc chắn đang chờ đèn
+                //    - Xe đứng yên VÀ đèn của nó đang đỏ → đang tuân thủ đèn, không phải mối đe dọa
+                if (other.speed < 0.5 && otherDistToIntersect > 50) {
+                    continue;
+                }
+                TrafficLight otherLight = lights.get(otherLightIdx);
+                TrafficLight.State otherEffState = otherLight.getStateForTurn(other.turnIntention, other.hasTurned);
+                if (other.speed < 0.5 && otherEffState == TrafficLight.State.RED && otherDistToIntersect > 0) {
+                    continue; // Xe đang dừng đèn đỏ đúng luật → không cần nhường
                 }
 
                 // So sánh phân nhánh ưu tiên
@@ -221,27 +264,30 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 boolean myPri = this.isPriorityVehicle || isFleeing;
                 boolean otherPri = other.isPriorityVehicle;
                 
-                // Trạng thái đè mặt ngã tư:
-                // Nếu mình đã rúc sâu vào điểm giao cắt (đang chắn đường ngang)
-                boolean iAmBlocking = (myDistToIntersect > -CLEARANCE && myDistToIntersect < 30);
-                boolean otherIsBlocking = (otherDistToIntersect > -CLEARANCE && otherDistToIntersect < 30);
+                // Trạng thái đè mặt ngã tư (Giải phóng ngã tư):
+                // LUẬT MỚI: Xe ĐÃ VÀO ngã tư (vượt qua vạch dừng) được ưu tiên TUYỆT ĐỐI để dọn đường
+                // Xe vừa có đèn xanh PHẢI CHỜ xe vừa dính đèn đỏ đi nốt qua ngã tư.
+                boolean iAmClearing = (this.passedStopLine && myDistToIntersect > -CLEARANCE);
+                boolean otherIsClearing = (other.passedStopLine && otherDistToIntersect > -CLEARANCE);
 
-                // Ưu tiên hiện trạng trường vật lý: (Xe nào chắn giữa đường thì luôn đi trước, kể cả xe đang chắn là xe thường gặp cấp cứu)
-                // "xe buýt đã đi ngang qua đầu xe khẩn cấp thì không cần dừng lại, khẩn cấp phải nhường"
-                if (iAmBlocking && !otherIsBlocking) {
+                // Ưu tiên hiện trạng trường vật lý:
+                // Nếu xe kia đang "dọn đường", ta chưa vào ngã tư thì phải nhường tuyệt đối!
+                if (iAmClearing && !otherIsClearing) {
                     iMustYield = false;
-                } else if (!iAmBlocking && otherIsBlocking) {
+                } else if (!iAmClearing && otherIsClearing) {
                     iMustYield = true;
                 } else {
-                    // Chưa xe nào đè vạch giao cắt: Đấu độ ưu tiên dựa trên cự ly tiếp cận
+                    // Cả 2 cùng chưa vào hoặc cùng vào rồi (hiếm): Đấu độ ưu tiên dựa trên cự ly tiếp cận
                     double myEffective = myDistToIntersect - (myPri ? 120 : 0);
                     double otherEffective = otherDistToIntersect - (otherPri ? 120 : 0);
 
-                    // Đèn xanh ưu tiên qua trước so với đèn đỏ (trừ xe ưu tiên)
-                    if (light.getState() == TrafficLight.State.GREEN && !otherPri) {
+                    // Đèn xanh ưu tiên qua trước — dùng myEffectiveLight thay vì light.getState()
+                    if (myEffectiveLight == TrafficLight.State.GREEN && !otherPri) {
                         myEffective -= 1000;
                     }
-                    if (lights.get(otherLightIdx).getState() == TrafficLight.State.GREEN && !myPri) {
+                    TrafficLight otherTL = lights.get(otherLightIdx);
+                    TrafficLight.State otherEffLight = otherTL.getStateForTurn(other.turnIntention, other.hasTurned);
+                    if (otherEffLight == TrafficLight.State.GREEN && !myPri) {
                         otherEffective -= 1000;
                     }
 
@@ -273,33 +319,95 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         for (Vehicle other : allVehicles) {
             if (other == this) continue;
 
+            // Xử lý L-shaped following: Hai xe cùng nguồn, cùng hướng rẽ, nhưng xe kia đã rẽ
+            boolean isLShapedFollow = false;
+            if (this.originalLightIdx == other.originalLightIdx && this.turnIntention == other.turnIntention && this.turnIntention != 0) {
+                if (!this.hasTurned && other.hasTurned) {
+                    isLShapedFollow = true;
+                }
+            }
+
             int otherLightIdx = getLightIdx(other.direction);
             boolean sameAxis = (lightIdx < 2 && otherLightIdx < 2) || (lightIdx >= 2 && otherLightIdx >= 2);
-            if (!sameAxis) continue;
+            
+            if (!sameAxis && !isLShapedFollow) continue;
 
-            boolean sameLane = (lightIdx < 2)
-                    ? Math.abs(other.y - this.y) < 12
-                    : Math.abs(other.x - this.x) < 12;
+            // sameLane threshold mở rộng theo kích thước xe — tránh miss khi xe lớn hoặc flee
+            double laneThreshold = Math.max(16, (this.height + other.height) / 2.0);
+            boolean sameLane = true;
+            if (sameAxis) {
+                sameLane = (lightIdx < 2)
+                        ? Math.abs(other.y - this.y) < laneThreshold
+                        : Math.abs(other.x - this.x) < laneThreshold;
+            }
             if (!sameLane) continue;
 
             double gap = Double.MAX_VALUE;
-            if (lightIdx == 0 && other.x > x)
-                gap = (other.x - other.width / 2.0)  - (x + width / 2.0);
-            else if (lightIdx == 1 && other.x < x)
-                gap = (x - width / 2.0) - (other.x + other.width / 2.0);
-            else if (lightIdx == 2 && other.y > y)
-                gap = (other.y - other.width / 2.0) - (y + width / 2.0);
-            else if (lightIdx == 3 && other.y < y)
-                gap = (y - width / 2.0) - (other.y + other.width / 2.0);
+            double myHL = this.getHalfLength();
+            double otherHL = other.getHalfLength();
+
+            if (isLShapedFollow) {
+                // L-shape gap = khoảng cách của tôi đến điểm rẽ + khoảng cách của xe kia tính từ điểm rẽ
+                // Điểm rẽ của cả 2 xe là như nhau!
+                double myDistToTurn = 0;
+                double otherDistFromTurn = 0;
+                double targetCoord = 0;
+                
+                if (turnIntention == 1) { // Left
+                    if (originalLightIdx == 0) targetCoord = cx + 15;
+                    else if (originalLightIdx == 1) targetCoord = cx - 15;
+                    else if (originalLightIdx == 2) targetCoord = cy + 15;
+                    else if (originalLightIdx == 3) targetCoord = cy - 15;
+                } else if (turnIntention == 2) { // Right
+                    if (originalLightIdx == 0) targetCoord = cx - 65;
+                    else if (originalLightIdx == 1) targetCoord = cx + 65;
+                    else if (originalLightIdx == 2) targetCoord = cy - 65;
+                    else if (originalLightIdx == 3) targetCoord = cy + 65;
+                }
+                
+                // My distance TO turn point (chưa rẽ nên myDistToTurn phải > 0)
+                if (originalLightIdx == 0) myDistToTurn = targetCoord - (this.x + myHL);
+                else if (originalLightIdx == 1) myDistToTurn = (this.x - myHL) - targetCoord;
+                else if (originalLightIdx == 2) myDistToTurn = targetCoord - (this.y + myHL);
+                else if (originalLightIdx == 3) myDistToTurn = (this.y - myHL) - targetCoord;
+
+                // Other distance FROM turn point (đã rẽ nên dist phải > 0)
+                // Lấy tọa độ xuất phát trên trục mới của xe đã rẽ
+                double otherOriginPathCoord = 0;
+                if (originalLightIdx == 0) otherOriginPathCoord = cy + (turnIntention == 1 ? 15 : 65);
+                else if (originalLightIdx == 1) otherOriginPathCoord = cy - (turnIntention == 1 ? 15 : 65);
+                else if (originalLightIdx == 2) otherOriginPathCoord = cx - (turnIntention == 1 ? 15 : 65);
+                else if (originalLightIdx == 3) otherOriginPathCoord = cx + (turnIntention == 1 ? 15 : 65);
+
+                if (otherLightIdx == 0) otherDistFromTurn = (other.x - otherHL) - otherOriginPathCoord;
+                else if (otherLightIdx == 1) otherDistFromTurn = otherOriginPathCoord - (other.x + otherHL);
+                else if (otherLightIdx == 2) otherDistFromTurn = (other.y - otherHL) - otherOriginPathCoord;
+                else if (otherLightIdx == 3) otherDistFromTurn = otherOriginPathCoord - (other.y + otherHL);
+
+                if (myDistToTurn >= -this.getHalfLength() && otherDistFromTurn >= 0) {
+                    gap = myDistToTurn + otherDistFromTurn;
+                }
+
+            } else {
+                // Straight follow
+                if (lightIdx == 0 && other.x > x)
+                    gap = (other.x - otherHL)  - (x + myHL);
+                else if (lightIdx == 1 && other.x < x)
+                    gap = (x - myHL) - (other.x + otherHL);
+                else if (lightIdx == 2 && other.y > y)
+                    gap = (other.y - otherHL) - (y + myHL);
+                else if (lightIdx == 3 && other.y < y)
+                    gap = (y - myHL) - (other.y + otherHL);
+            }
 
             if (gap < safeDistance) {
-                double minGap = 5.0; 
+                double minGap = 8.0; 
                 if (gap <= minGap) {
                     shouldStop = true;
                 } else {
                     double ratio = (gap - minGap) / (safeDistance - minGap);
                     ratio = Math.max(0, Math.min(1, ratio));
-                    double followSpeed = other.speed + (baseSpeed - other.speed) * ratio;
+                    double followSpeed = other.speed * ratio;
                     currentTargetSpeed = Math.min(currentTargetSpeed, followSpeed);
                 }
             }
@@ -341,7 +449,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         }
     }
 
-    private int getLightIdx(double dir) {
+    public int getTurnIntention() { return turnIntention; }
+    public boolean hasTurned() { return hasTurned; }
+    public double getDistToStopLine() { return distToStopLine; }
+
+    public int getLightIdx(double dir) {
         if      (Math.abs(dir - 0)           < 0.1) return 0;
         else if (Math.abs(dir - Math.PI)     < 0.1) return 1;
         else if (Math.abs(dir - Math.PI / 2) < 0.1) return 2;

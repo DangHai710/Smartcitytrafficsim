@@ -15,8 +15,8 @@ public class FireTruck extends Vehicle {
      * @param direction        Hướng di chuyển (radian).
      */
     public FireTruck(String id, double x, double y, double speed, double direction) {
-        // Kích thước 60x30, là xe ưu tiên => isPriorityVehicle = true
-        super(id, x, y, speed, direction, 60, 30, true);
+        // Kích thước thu nhỏ: 40x20, là xe ưu tiên => isPriorityVehicle = true
+        super(id, x, y, speed, direction, 40, 20, true);
     }
 
     @Override

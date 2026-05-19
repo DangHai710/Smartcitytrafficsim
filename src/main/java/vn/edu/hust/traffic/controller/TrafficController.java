@@ -57,8 +57,8 @@ public class TrafficController {
     }
 
     public void update(double dt) {
-        // Cập nhật phase đèn (đồng bộ hóa cả 4 đèn)
-        phaseController.update(dt);
+        // Cập nhật phase đèn (đồng bộ hóa cả 4 đèn) với danh sách xe để tính toán phase động
+        phaseController.update(dt, vehicles);
 
         // Sinh xe mới mỗi 5 giây (nếu auto spawn được bật)
         if (autoSpawnEnabled) {
@@ -118,9 +118,9 @@ public class TrafficController {
             boolean isEmergency = random.nextBoolean();
             v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, isEmergency);
         } else if (type < 20) {
-            v = new Bus("Bus" + vehicleCount, x, y, speed, dir);
+            v = new Bus("Bus" + vehicleCount, x, y, speed * 0.7, dir); // Bus chạy chậm hơn từ đầu
         } else if (type < 50) {
-            v = new Car("Car" + vehicleCount, x, y, speed, dir, 40, 20, false);
+            v = new Car("Car" + vehicleCount, x, y, speed, dir, 26, 13, false);
         } else {
             v = new Motorbike("Bike" + vehicleCount, x, y, speed, dir, false);
         }
@@ -157,8 +157,8 @@ public class TrafficController {
             case "Emergency": v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, true); break;
             case "Ambulance": v = new Ambulance("Amb" + vehicleCount, x, y, speed, dir, false); break;
             case "FireTruck": v = new FireTruck("Fire" + vehicleCount, x, y, speed, dir); break;
-            case "Bus": v = new Bus("Bus" + vehicleCount, x, y, speed, dir); break;
-            case "Car": v = new Car("Car" + vehicleCount, x, y, speed, dir, 40, 20, false); break;
+            case "Bus": v = new Bus("Bus" + vehicleCount, x, y, speed * 0.7, dir); break; // Bus chậm hơn
+            case "Car": v = new Car("Car" + vehicleCount, x, y, speed, dir, 26, 13, false); break;
             case "Motorbike": v = new Motorbike("Bike" + vehicleCount, x, y, speed, dir, false); break;
         }
         

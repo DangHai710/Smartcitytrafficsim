@@ -6,15 +6,15 @@ package vn.edu.hust.traffic.model.vehicle;
  */
 public class Bus extends Vehicle {
     public Bus(String id, double x, double y, double speed, double direction) {
-        // Kích thước lớn: 80x28
-        super(id, x, y, speed, direction, 80, 28, false);
+        // Kích thước thu nhỏ cho vừa làn: 52x18
+        super(id, x, y, speed, direction, 52, 18, false);
     }
 
     @Override
     public void movePhysically(double dt) {
-        // Xe buýt đi chậm và ổn định
-        setX(getX() + Math.cos(getDirection()) * getSpeed() * 0.8 * dt);
-        setY(getY() + Math.sin(getDirection()) * getSpeed() * 0.8 * dt);
+        // Tốc độ đã được Vehicle.update() tính toán chính xác — không nhân hệ số thêm
+        setX(getX() + Math.cos(getDirection()) * getSpeed() * dt);
+        setY(getY() + Math.sin(getDirection()) * getSpeed() * dt);
     }
 
     @Override

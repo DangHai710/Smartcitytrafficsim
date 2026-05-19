@@ -7,8 +7,8 @@ package vn.edu.hust.traffic.model.vehicle;
  */
 public class Ambulance extends Vehicle {
     public Ambulance(String id, double x, double y, double speed, double direction, boolean isEmergency) {
-        // Kích thước: 45x22, isEmergency true -> isPriorityVehicle=true
-        super(id, x, y, speed, direction, 45, 22, isEmergency);
+        // Kích thước thu nhỏ: 30x14, isEmergency true -> isPriorityVehicle=true
+        super(id, x, y, speed, direction, 30, 14, isEmergency);
     }
 
     @Override
