@@ -1,6 +1,7 @@
 package vn.edu.hust.traffic.model.vehicle;
 
 import vn.edu.hust.traffic.model.map.TrafficLight;
+import vn.edu.hust.traffic.model.map.Intersection;
 import java.util.List;
 
 /**
@@ -45,19 +46,84 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     }
 
 
-    public void update(double dt, List<Vehicle> allVehicles, List<TrafficLight> lights, int screenWidth, int screenHeight) {
+    private Intersection getTargetIntersection(List<Intersection> intersections) {
+        Intersection target = null;
+        double minPositiveDist = Double.MAX_VALUE;
+        double hl = getHalfLength();
+        
+        for (Intersection inter : intersections) {
+            double stopX_LTR = inter.getX() - 100;
+            double stopX_RTL = inter.getX() + 100;
+            double stopY_TTB = inter.getY() - 100;
+            double stopY_BTT = inter.getY() + 100;
+            
+            int lightIdx = getLightIdx(direction);
+            double dist = Double.MAX_VALUE;
+            
+            switch (lightIdx) {
+                case 0: dist = stopX_LTR - (x + hl); break;
+                case 1: dist = (x - hl) - stopX_RTL; break;
+                case 2: dist = stopY_TTB - (y + hl); break;
+                case 3: dist = (y - hl) - stopY_BTT; break;
+            }
+            
+            // Đang ở trong ngã tư (đã qua vạch dừng nhưng chưa thoát hẳn, bán kính ngã tư ~200)
+            if (dist <= 0 && dist > -200) {
+                return inter; 
+            }
+            // Đang tiến tới ngã tư
+            if (dist > 0 && dist < minPositiveDist) {
+                minPositiveDist = dist;
+                target = inter;
+            }
+        }
+        return target;
+    }
+
+    public void update(double dt, List<Vehicle> allVehicles, List<Intersection> intersections, int screenWidth, int screenHeight) {
         double safeDistance = (width > 30) ? 50 : 30;
         final double SLOW_ZONE = 80.0;
         boolean shouldStop = false;
         double currentTargetSpeed = baseSpeed;
 
-        int lightIdx = getLightIdx(direction);
-        TrafficLight light = lights.get(lightIdx);
+        Intersection targetInter = getTargetIntersection(intersections);
+        if (targetInter == null) {
+            this.speed = baseSpeed;
+            movePhysically(dt);
+            return;
+        }
 
-        double stopX_LTR = screenWidth  / 2.0 - 100;
-        double stopX_RTL = screenWidth  / 2.0 + 100;
-        double stopY_TTB = screenHeight / 2.0 - 100;
-        double stopY_BTT = screenHeight / 2.0 + 100;
+        double cx = targetInter.getX();
+        double cy = targetInter.getY();
+        int lightIdx = getLightIdx(direction);
+        
+        // BẢO VỆ NGÃ 3: RTL không rẽ phải lên Bắc, LTR không rẽ trái lên Bắc, BTT không đi thẳng lên Bắc
+        if (targetInter instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection) {
+            if (lightIdx == 0 && turnIntention == 1) { // LTR (đi Đông) không thể rẽ trái (Bắc)
+                turnIntention = Math.random() < 0.5 ? 0 : 2;
+            } else if (lightIdx == 1 && turnIntention == 2) { // RTL (đi Tây) không thể rẽ phải (Bắc)
+                turnIntention = Math.random() < 0.5 ? 0 : 1;
+            } else if (lightIdx == 3 && turnIntention == 0) { // BTT (đi Bắc) không thể đi thẳng (Bắc)
+                turnIntention = Math.random() < 0.5 ? 1 : 2;
+            }
+        }
+        
+        TrafficLight light = null;
+        if (targetInter instanceof vn.edu.hust.traffic.model.map.CrossIntersection) {
+            light = targetInter.getLights().get(lightIdx);
+        } else if (targetInter instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection) {
+            light = ((vn.edu.hust.traffic.model.map.ThreeWayIntersection)targetInter).getLightForDirection(direction);
+        }
+        if (light == null) {
+            this.speed = baseSpeed;
+            movePhysically(dt);
+            return;
+        }
+
+        double stopX_LTR = cx - 100;
+        double stopX_RTL = cx + 100;
+        double stopY_TTB = cy - 100;
+        double stopY_BTT = cy + 100;
 
         distToStopLine = Double.MAX_VALUE;
         double hl = getHalfLength();
@@ -82,8 +148,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         }
 
         // BƯỚC 0.5: Kiểm tra và thực hiện rẽ nếu xe đang ở giữa ngã tư
-        double cx = screenWidth / 2.0;
-        double cy = screenHeight / 2.0;
+
         
         if (!hasTurned && turnIntention != 0 && passedStopLine) {
             boolean readyToTurn = false;
@@ -120,7 +185,6 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 }
                 hasTurned = true;
                 lightIdx = getLightIdx(direction); // Cập nhật ngay lightIdx mới
-                light = lights.get(lightIdx);
             }
         }
 
@@ -253,10 +317,19 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 if (other.speed < 0.5 && otherDistToIntersect > 50) {
                     continue;
                 }
-                TrafficLight otherLight = lights.get(otherLightIdx);
-                TrafficLight.State otherEffState = otherLight.getStateForTurn(other.turnIntention, other.hasTurned);
-                if (other.speed < 0.5 && otherEffState == TrafficLight.State.RED && otherDistToIntersect > 0) {
-                    continue; // Xe đang dừng đèn đỏ đúng luật → không cần nhường
+                TrafficLight otherLight = null;
+                Intersection otherTarget = other.getTargetIntersection(intersections);
+                if (otherTarget instanceof vn.edu.hust.traffic.model.map.CrossIntersection) {
+                    otherLight = otherTarget.getLights().get(otherLightIdx);
+                } else if (otherTarget instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection) {
+                    otherLight = ((vn.edu.hust.traffic.model.map.ThreeWayIntersection)otherTarget).getLightForDirection(other.direction);
+                }
+                
+                if (otherLight != null) {
+                    TrafficLight.State otherEffState = otherLight.getStateForTurn(other.turnIntention, other.hasTurned);
+                    if (other.speed < 0.5 && otherEffState == TrafficLight.State.RED && otherDistToIntersect > 0) {
+                        continue; // Xe đang dừng đèn đỏ đúng luật → không cần nhường
+                    }
                 }
 
                 // So sánh phân nhánh ưu tiên
@@ -285,10 +358,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                     if (myEffectiveLight == TrafficLight.State.GREEN && !otherPri) {
                         myEffective -= 1000;
                     }
-                    TrafficLight otherTL = lights.get(otherLightIdx);
-                    TrafficLight.State otherEffLight = otherTL.getStateForTurn(other.turnIntention, other.hasTurned);
-                    if (otherEffLight == TrafficLight.State.GREEN && !myPri) {
-                        otherEffective -= 1000;
+                    if (otherLight != null) {
+                        TrafficLight.State otherEffLight = otherLight.getStateForTurn(other.turnIntention, other.hasTurned);
+                        if (otherEffLight == TrafficLight.State.GREEN && !myPri) {
+                            otherEffective -= 1000;
+                        }
                     }
 
                     // Ai còn cách xa (hoặc kém ưu tiên) thì sẽ "tự cảm thấy" cần nhường
