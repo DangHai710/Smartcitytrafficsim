@@ -108,9 +108,9 @@ public class SimulationWindow extends Application {
         drawIntersectionCorner(gc, cx2, hy, 1, 1);   // Bottom-Right
 
         // Hàm helper để vẽ các đoạn
-        double[] hSegs = {0, cx1-100, cx1+100, cx2-100, cx2+100, WIDTH};
-        double[] vSegs1 = {0, hy-100, hy+100, HEIGHT};
-        double[] vSegs2 = {hy+100, HEIGHT};
+        double[] hSegs = {0, cx1-120, cx1+120, cx2-120, cx2+120, WIDTH};
+        double[] vSegs1 = {0, hy-120, hy+120, HEIGHT};
+        double[] vSegs2 = {hy+120, HEIGHT};
 
         // --- VẠCH NGANG ---
         gc.setStroke(javafx.scene.paint.Color.WHITE);
@@ -170,67 +170,31 @@ public class SimulationWindow extends Application {
             gc.strokeLine(cx2 + 2, vSegs2[i], cx2 + 2, vSegs2[i+1]);
         }
         
-        // --- VẠCH NÉT ĐỨT DẪN ĐƯỜNG RẼ (GUIDING LINES) ---
-        gc.setStroke(javafx.scene.paint.Color.web("#888888"));
-        gc.setLineWidth(1.5);
-        gc.setLineDashes(6);
-        
-        // Ngã 4
-        // LTR -> North
-        gc.beginPath();
-        gc.moveTo(cx1 - 100, hy + 15);
-        gc.quadraticCurveTo(cx1 + 15, hy + 15, cx1 + 15, hy - 100);
-        gc.stroke();
-        
-        // RTL -> South
-        gc.beginPath();
-        gc.moveTo(cx1 + 100, hy - 15);
-        gc.quadraticCurveTo(cx1 - 15, hy - 15, cx1 - 15, hy + 100);
-        gc.stroke();
-        
-        // BTT -> West
-        gc.beginPath();
-        gc.moveTo(cx1 + 15, hy + 100);
-        gc.quadraticCurveTo(cx1 + 15, hy - 15, cx1 - 100, hy - 15);
-        gc.stroke();
-        
-        // TTB -> East
-        gc.beginPath();
-        gc.moveTo(cx1 - 15, hy - 100);
-        gc.quadraticCurveTo(cx1 - 15, hy + 15, cx1 + 100, hy + 15);
-        gc.stroke();
-        
-        // Ngã 3 (Chỉ có BTT -> West)
-        gc.beginPath();
-        gc.moveTo(cx2 + 15, hy + 100);
-        gc.quadraticCurveTo(cx2 + 15, hy - 15, cx2 - 100, hy - 15);
-        gc.stroke();
-
         // --- MŨI TÊN CHỈ HƯỚNG ---
         // Vẽ bằng vector trong drawLanesArrows
-        drawLanesArrows(gc, cx1 - 100, hy, 0, "left", "straight", "right");   // LTR Ngã 4
-        drawLanesArrows(gc, cx1 + 100, hy, 180, "left", "straight", "right"); // RTL Ngã 4
-        drawLanesArrows(gc, cx1, hy - 100, 90, "left", "straight", "right");  // TTB Ngã 4
-        drawLanesArrows(gc, cx1, hy + 100, 270, "left", "straight", "right"); // BTT Ngã 4
+        drawLanesArrows(gc, cx1 - 120, hy, 0, "left", "straight", "straight_right");   // LTR Ngã 4
+        drawLanesArrows(gc, cx1 + 120, hy, 180, "left", "straight", "straight_right"); // RTL Ngã 4
+        drawLanesArrows(gc, cx1, hy - 120, 90, "left", "straight", "straight_right");  // TTB Ngã 4
+        drawLanesArrows(gc, cx1, hy + 120, 270, "left", "straight", "straight_right"); // BTT Ngã 4
         
-        drawLanesArrows(gc, cx2 - 100, hy, 0, "straight", "straight", "right");   // LTR Ngã 3
-        drawLanesArrows(gc, cx2 + 100, hy, 180, "left", "straight", "straight"); // RTL Ngã 3
-        drawLanesArrows(gc, cx2, hy + 100, 270, "left", "left_right", "right"); // BTT Ngã 3
+        drawLanesArrows(gc, cx2 - 120, hy, 0, "straight", "straight", "straight_right");   // LTR Ngã 3
+        drawLanesArrows(gc, cx2 + 120, hy, 180, "left", "straight", "straight"); // RTL Ngã 3
+        drawLanesArrows(gc, cx2, hy + 120, 270, "left", "left_right", "right"); // BTT Ngã 3
 
         gc.setLineDashes(0);
 
         // 3. Vạch dừng (Stop Lines) - Ngã 4
         gc.setStroke(javafx.scene.paint.Color.WHITE);
         gc.setLineWidth(4);
-        gc.strokeLine(cx1 - 100, HEIGHT/2.0 + 5, cx1 - 100, HEIGHT/2.0 + 75); // Hướng LTR
-        gc.strokeLine(cx1 + 100, HEIGHT/2.0 - 5, cx1 + 100, HEIGHT/2.0 - 75); // Hướng RTL
-        gc.strokeLine(cx1 - 75, HEIGHT/2.0 - 100, cx1 - 5, HEIGHT/2.0 - 100); // Hướng TTB
-        gc.strokeLine(cx1 + 75, HEIGHT/2.0 + 100, cx1 + 5, HEIGHT/2.0 + 100); // Hướng BTT
+        gc.strokeLine(cx1 - 120, HEIGHT/2.0 + 5, cx1 - 120, HEIGHT/2.0 + 75); // Hướng LTR
+        gc.strokeLine(cx1 + 120, HEIGHT/2.0 - 5, cx1 + 120, HEIGHT/2.0 - 75); // Hướng RTL
+        gc.strokeLine(cx1 - 75, HEIGHT/2.0 - 120, cx1 - 5, HEIGHT/2.0 - 120); // Hướng TTB
+        gc.strokeLine(cx1 + 75, HEIGHT/2.0 + 120, cx1 + 5, HEIGHT/2.0 + 120); // Hướng BTT
         
         // Vạch dừng (Stop Lines) - Ngã 3
-        gc.strokeLine(cx2 - 100, HEIGHT/2.0 + 5, cx2 - 100, HEIGHT/2.0 + 75); // Hướng LTR
-        gc.strokeLine(cx2 + 100, HEIGHT/2.0 - 5, cx2 + 100, HEIGHT/2.0 - 75); // Hướng RTL
-        gc.strokeLine(cx2 + 75, HEIGHT/2.0 + 100, cx2 + 5, HEIGHT/2.0 + 100); // Hướng BTT
+        gc.strokeLine(cx2 - 120, HEIGHT/2.0 + 5, cx2 - 120, HEIGHT/2.0 + 75); // Hướng LTR
+        gc.strokeLine(cx2 + 120, HEIGHT/2.0 - 5, cx2 + 120, HEIGHT/2.0 - 75); // Hướng RTL
+        gc.strokeLine(cx2 + 75, HEIGHT/2.0 + 120, cx2 + 5, HEIGHT/2.0 + 120); // Hướng BTT
 
         // 3.5 Vạch đi bộ (Zebra Crossings) - Ngã 4
         drawZebraCrossing(gc, cx1 - 95, hy - 75, cx1 - 85, hy + 75, true);   // West
@@ -481,6 +445,15 @@ public class SimulationWindow extends Application {
             gc.strokeLine(3, 0, 3, -10);
             gc.strokeLine(3, -10, 0, -7);
             gc.strokeLine(3, -10, 6, -7);
+            // Nhánh phải (hướng +Y)
+            gc.strokeLine(3, 0, 3, 10);
+            gc.strokeLine(3, 10, 0, 7);
+            gc.strokeLine(3, 10, 6, 7);
+        } else if ("straight_right".equals(type)) {
+            // Thân đi thẳng rồi phân nhánh rẽ phải
+            gc.strokeLine(-10, 0, 10, 0);
+            gc.strokeLine(10, 0, 5, -4);
+            gc.strokeLine(10, 0, 5, 4);
             // Nhánh phải (hướng +Y)
             gc.strokeLine(3, 0, 3, 10);
             gc.strokeLine(3, 10, 0, 7);

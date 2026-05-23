@@ -105,7 +105,7 @@ public class TrafficController {
         double offset = 0;
         if (turnIntention == 1) offset = LANE_PRIORITY;
         else if (turnIntention == 2) offset = LANE_BIKE;
-        else offset = LANE_CAR;
+        else offset = random.nextBoolean() ? LANE_CAR : LANE_BIKE;
 
         switch (sourceIdx) {
             case 0: // Trái -> Phải (Vào đường ngang)
@@ -148,7 +148,7 @@ public class TrafficController {
         double offset = 0;
         if (turnIntention == 1) offset = LANE_PRIORITY;
         else if (turnIntention == 2) offset = LANE_BIKE;
-        else offset = LANE_CAR;
+        else offset = random.nextBoolean() ? LANE_CAR : LANE_BIKE;
 
         double x = 0, y = 0, dir = 0;
         switch (dirIdx) {

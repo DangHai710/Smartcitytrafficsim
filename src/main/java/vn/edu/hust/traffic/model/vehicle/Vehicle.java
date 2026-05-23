@@ -53,10 +53,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         double hl = getHalfLength();
         
         for (Intersection inter : intersections) {
-            double stopX_LTR = inter.getX() - 100;
-            double stopX_RTL = inter.getX() + 100;
-            double stopY_TTB = inter.getY() - 100;
-            double stopY_BTT = inter.getY() + 100;
+            double stopX_LTR = inter.getX() - 120;
+            double stopX_RTL = inter.getX() + 120;
+            double stopY_TTB = inter.getY() - 120;
+            double stopY_BTT = inter.getY() + 120;
             
             int lightIdx = isTurningDiagonally ? originalLightIdx : getLightIdx(direction);
             double dist = Double.MAX_VALUE;
@@ -121,10 +121,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             return;
         }
 
-        double stopX_LTR = cx - 100;
-        double stopX_RTL = cx + 100;
-        double stopY_TTB = cy - 100;
-        double stopY_BTT = cy + 100;
+        double stopX_LTR = cx - 120;
+        double stopX_RTL = cx + 120;
+        double stopY_TTB = cy - 120;
+        double stopY_BTT = cy + 120;
 
         distToStopLine = Double.MAX_VALUE;
         double hl = getHalfLength();
