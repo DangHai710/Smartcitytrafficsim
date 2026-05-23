@@ -95,8 +95,19 @@ public class SimulationWindow extends Application {
         double cx2 = 1000.0;
         gc.fillRect(cx2 - 80, HEIGHT / 2.0, 160, HEIGHT / 2.0); // Chỉ có nhánh dưới
 
-        // Hàm helper để vẽ các đoạn
         double hy = HEIGHT / 2.0;
+
+        // Vẽ các góc bo/đảo giao thông cho Ngã 4
+        drawIntersectionCorner(gc, cx1, hy, -1, -1); // Top-Left
+        drawIntersectionCorner(gc, cx1, hy, 1, -1);  // Top-Right
+        drawIntersectionCorner(gc, cx1, hy, -1, 1);  // Bottom-Left
+        drawIntersectionCorner(gc, cx1, hy, 1, 1);   // Bottom-Right
+        
+        // Vẽ các góc bo/đảo giao thông cho Ngã 3
+        drawIntersectionCorner(gc, cx2, hy, -1, 1);  // Bottom-Left
+        drawIntersectionCorner(gc, cx2, hy, 1, 1);   // Bottom-Right
+
+        // Hàm helper để vẽ các đoạn
         double[] hSegs = {0, cx1-100, cx1+100, cx2-100, cx2+100, WIDTH};
         double[] vSegs1 = {0, hy-100, hy+100, HEIGHT};
         double[] vSegs2 = {hy+100, HEIGHT};
@@ -221,6 +232,17 @@ public class SimulationWindow extends Application {
         gc.strokeLine(cx2 + 100, HEIGHT/2.0 - 5, cx2 + 100, HEIGHT/2.0 - 75); // Hướng RTL
         gc.strokeLine(cx2 + 75, HEIGHT/2.0 + 100, cx2 + 5, HEIGHT/2.0 + 100); // Hướng BTT
 
+        // 3.5 Vạch đi bộ (Zebra Crossings) - Ngã 4
+        drawZebraCrossing(gc, cx1 - 95, hy - 75, cx1 - 85, hy + 75, true);   // West
+        drawZebraCrossing(gc, cx1 + 85, hy - 75, cx1 + 95, hy + 75, true);   // East
+        drawZebraCrossing(gc, cx1 - 75, hy - 95, cx1 + 75, hy - 85, false);  // North
+        drawZebraCrossing(gc, cx1 - 75, hy + 85, cx1 + 75, hy + 95, false);  // South
+        
+        // Vạch đi bộ (Zebra Crossings) - Ngã 3
+        drawZebraCrossing(gc, cx2 - 95, hy - 75, cx2 - 85, hy + 75, true);   // West
+        drawZebraCrossing(gc, cx2 + 85, hy - 75, cx2 + 95, hy + 75, true);   // East
+        drawZebraCrossing(gc, cx2 - 75, hy + 85, cx2 + 75, hy + 95, false);  // South
+
         // 4. Vẽ phương tiện bằng VehicleRenderer (animation + hình vẽ chi tiết)
         vehicleRenderer.tick();
         for (Vehicle v : vehicles) {
@@ -232,11 +254,12 @@ public class SimulationWindow extends Application {
         for (int i = 0; i < 4; i++) {
             TrafficLight light = lights1.get(i);
             double lx = 0, ly = 0;
+            double cy = HEIGHT / 2.0;
             switch(i) {
-                case 0: lx = cx1-150; ly = HEIGHT/2.0-205; break;
-                case 1: lx = cx1+105; ly = HEIGHT/2.0-205; break;
-                case 2: lx = cx1-150; ly = HEIGHT/2.0+115; break;
-                case 3: lx = cx1+105; ly = HEIGHT/2.0+115; break;
+                case 0: lx = cx1 - 136; ly = cy - 148; break; // Top-Left Island
+                case 1: lx = cx1 + 94;  ly = cy - 148; break; // Top-Right Island
+                case 2: lx = cx1 - 136; ly = cy + 82;  break; // Bottom-Left Island
+                case 3: lx = cx1 + 94;  ly = cy + 82;  break; // Bottom-Right Island
             }
             drawTrafficLightGroup(gc, light, lx, ly, true, true);
         }
@@ -245,10 +268,11 @@ public class SimulationWindow extends Application {
         for (int i = 0; i < 3; i++) {
             TrafficLight light = lights2.get(i);
             double lx = 0, ly = 0;
+            double cy = HEIGHT / 2.0;
             switch(i) {
-                case 0: lx = cx2-150; ly = HEIGHT/2.0-205; break; // LTR: chỉ có thẳng & rẽ phải (LUON) -> Không vẽ đèn rẽ trái
-                case 1: lx = cx2+105; ly = HEIGHT/2.0-205; break; // RTL: có thẳng & rẽ trái -> Vẽ cả 2
-                case 2: lx = cx2+105; ly = HEIGHT/2.0+115; break; // BTT: chỉ có rẽ trái & rẽ phải -> Không vẽ đèn thẳng
+                case 0: lx = cx2 - 136; ly = cy + 82;  break; // LTR: Bottom-Left Island
+                case 1: lx = cx2 + 94;  ly = cy - 148; break; // RTL: Top-Right (grass)
+                case 2: lx = cx2 + 94;  ly = cy + 82;  break; // BTT: Bottom-Right Island
             }
             if (i == 0) {
                 drawTrafficLightGroup(gc, light, lx, ly, true, false);
@@ -299,6 +323,12 @@ public class SimulationWindow extends Application {
     }
 
     private void drawTrafficLightGroup(GraphicsContext gc, TrafficLight light, double lx, double ly, boolean showStraight, boolean showLeft) {
+        gc.save();
+        gc.translate(lx, ly);
+        gc.scale(0.75, 0.75);
+        lx = 0;
+        ly = 0;
+
         if (showStraight) {
             // === CỤM 1: Đèn đi thẳng (3 đèn Đỏ-Vàng-Xanh) ===
             gc.setFill(javafx.scene.paint.Color.web("#222222"));
@@ -357,6 +387,7 @@ public class SimulationWindow extends Application {
             gc.setFont(Font.font("System", FontWeight.BOLD, 11));
             gc.fillText(String.valueOf(light.getTimeLeft()), lx+5, ly+100);
         }
+        gc.restore();
     }
     /**
      * Vẽ bảng chú thích loại xe ở góc phải dưới màn hình.
@@ -403,8 +434,8 @@ public class SimulationWindow extends Application {
         gc.setLineWidth(2.0);
         gc.setLineDashes(0);
         
-        // Vẽ 3 mũi tên tương ứng 3 làn (ở khoảng cách -35px trước vạch dừng)
-        double arrowX = -35; // Lùi lại trước vạch dừng
+        // Vẽ 3 mũi tên tương ứng 3 làn (ở khoảng cách -25px trước vạch dừng)
+        double arrowX = -25; // Lùi lại ngay sát sau vạch dừng đèn đỏ
         
         // 1. Làn trong cùng (ưu tiên): l1 (offset 15)
         drawSingleArrow(gc, arrowX, 15, l1);
@@ -457,6 +488,62 @@ public class SimulationWindow extends Application {
         }
         
         gc.restore();
+    }
+
+    private void drawZebraCrossing(GraphicsContext gc, double startX, double startY, double endX, double endY, boolean isHorizontalRoad) {
+        gc.save();
+        gc.setStroke(javafx.scene.paint.Color.WHITE);
+        gc.setLineWidth(5);
+        gc.setLineDashes(0);
+        if (isHorizontalRoad) {
+            for (double y = startY; y <= endY; y += 12) {
+                gc.strokeLine(startX, y, endX, y);
+            }
+        } else {
+            for (double x = startX; x <= endX; x += 12) {
+                gc.strokeLine(x, startY, x, endY);
+            }
+        }
+        gc.restore();
+    }
+
+    private void drawIntersectionCorner(GraphicsContext gc, double cx, double cy, double signX, double signY) {
+        // 1. Vẽ nền đường rẽ tắt (Flare - vát chéo góc đường)
+        gc.setFill(javafx.scene.paint.Color.web("#333333"));
+        gc.fillPolygon(
+            new double[]{cx + signX*250, cx + signX*80, cx + signX*80},
+            new double[]{cy + signY*80, cy + signY*250, cy + signY*80},
+            3
+        );
+
+        // Vẽ vạch liền mép ngoài đường rẽ tắt
+        gc.setStroke(javafx.scene.paint.Color.web("#888888"));
+        gc.setLineWidth(2);
+        gc.strokeLine(cx + signX*250, cy + signY*80, cx + signX*80, cy + signY*250);
+
+        // 2. Vẽ đảo giao thông (Island) hình tam giác
+        // Đảo sẽ nằm giữa làn rẽ phải và các làn đi thẳng, tạo hình một vát chéo
+        gc.setFill(javafx.scene.paint.Color.web("#a06050")); // Màu gạch lót đường
+        gc.fillPolygon(
+            new double[]{cx + signX*186, cx + signX*80, cx + signX*80},
+            new double[]{cy + signY*80, cy + signY*186, cy + signY*80},
+            3
+        );
+        // Viền đảo giao thông (bó vỉa)
+        gc.setStroke(javafx.scene.paint.Color.web("#dddddd"));
+        gc.setLineWidth(2);
+        gc.strokePolygon(
+            new double[]{cx + signX*186, cx + signX*80, cx + signX*80},
+            new double[]{cy + signY*80, cy + signY*186, cy + signY*80},
+            3
+        );
+
+        // 3. Vẽ vạch đứt phân làn giữa đường rẽ tắt (chạy song song với lề)
+        gc.setStroke(javafx.scene.paint.Color.WHITE);
+        gc.setLineWidth(2);
+        gc.setLineDashes(10);
+        gc.strokeLine(cx + signX*218, cy + signY*80, cx + signX*80, cy + signY*218);
+        gc.setLineDashes(0);
     }
 
     public static void main(String[] args) { launch(args); }

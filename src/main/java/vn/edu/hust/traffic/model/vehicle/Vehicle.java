@@ -17,6 +17,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     protected int turnIntention = 0; // 0: Thẳng, 1: Rẽ Trái, 2: Rẽ Phải
     protected boolean hasTurned = false;
     protected final int originalLightIdx;
+    protected boolean isTurningDiagonally = false;
 
     public Vehicle(String id, double x, double y, double speed, double direction, double width, double height, boolean isPriorityVehicle) {
         this.id = id;
@@ -57,7 +58,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             double stopY_TTB = inter.getY() - 100;
             double stopY_BTT = inter.getY() + 100;
             
-            int lightIdx = getLightIdx(direction);
+            int lightIdx = isTurningDiagonally ? originalLightIdx : getLightIdx(direction);
             double dist = Double.MAX_VALUE;
             
             switch (lightIdx) {
@@ -148,40 +149,72 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         }
 
         // BƯỚC 0.5: Kiểm tra và thực hiện rẽ nếu xe đang ở giữa ngã tư
-
         
-        if (!hasTurned && turnIntention != 0 && passedStopLine) {
+        // THÊM MỚI: QUỸ ĐẠO RẼ PHẢI CHÉO GÓC (VÀO ĐƯỜNG RẼ TẮT)
+        if (!hasTurned && turnIntention == 2) {
+            double TURN_DIST = 233.0;
+            double END_LANE = 65.0;
+
+            if (!isTurningDiagonally) {
+                boolean readyToDiagonal = false;
+                if (originalLightIdx == 0) readyToDiagonal = (x >= cx - TURN_DIST);
+                else if (originalLightIdx == 1) readyToDiagonal = (x <= cx + TURN_DIST);
+                else if (originalLightIdx == 2) readyToDiagonal = (y >= cy - TURN_DIST);
+                else if (originalLightIdx == 3) readyToDiagonal = (y <= cy + TURN_DIST);
+
+                if (readyToDiagonal) {
+                    isTurningDiagonally = true;
+                    passedStopLine = true; // Bỏ qua đèn đỏ vì làn rẽ phải luôn thông
+                    if (originalLightIdx == 0) { x = cx - TURN_DIST; direction = Math.PI/4; }
+                    else if (originalLightIdx == 1) { x = cx + TURN_DIST; direction = -Math.PI*3/4; }
+                    else if (originalLightIdx == 2) { y = cy - TURN_DIST; direction = Math.PI*3/4; }
+                    else if (originalLightIdx == 3) { y = cy + TURN_DIST; direction = -Math.PI/4; }
+                }
+            }
+
+            if (isTurningDiagonally) {
+                boolean endDiagonal = false;
+                if (originalLightIdx == 0) endDiagonal = (x >= cx - END_LANE);
+                else if (originalLightIdx == 1) endDiagonal = (x <= cx + END_LANE);
+                else if (originalLightIdx == 2) endDiagonal = (y >= cy - END_LANE);
+                else if (originalLightIdx == 3) endDiagonal = (y <= cy + END_LANE);
+
+                if (endDiagonal) {
+                    isTurningDiagonally = false;
+                    hasTurned = true;
+                    if (originalLightIdx == 0) { x = cx - END_LANE; direction = Math.PI/2; }
+                    else if (originalLightIdx == 1) { x = cx + END_LANE; direction = -Math.PI/2; }
+                    else if (originalLightIdx == 2) { y = cy - END_LANE; direction = Math.PI; }
+                    else if (originalLightIdx == 3) { y = cy + END_LANE; direction = 0; }
+                    
+                    lightIdx = getLightIdx(direction); // Cập nhật lại tín hiệu đèn sau khi nắn thẳng trục
+                }
+            }
+        }
+
+        // RẼ TRÁI Ở GIỮA NGÃ TƯ
+        if (!hasTurned && turnIntention == 1 && passedStopLine) {
             boolean readyToTurn = false;
             double targetCoord = 0;
             
             // Tính toán tọa độ chính xác để sau khi bẻ lái, xe nằm đúng boong giữa làn
             if (turnIntention == 1) { // Rẽ trái (vào làn priority offset 15)
-                if (lightIdx == 0) { targetCoord = cx + 15; readyToTurn = (x >= targetCoord); }
-                else if (lightIdx == 1) { targetCoord = cx - 15; readyToTurn = (x <= targetCoord); }
-                else if (lightIdx == 2) { targetCoord = cy + 15; readyToTurn = (y >= targetCoord); }
-                else if (lightIdx == 3) { targetCoord = cy - 15; readyToTurn = (y <= targetCoord); }
-            } else if (turnIntention == 2) { // Rẽ phải (vào làn bike offset 65)
-                if (lightIdx == 0) { targetCoord = cx - 65; readyToTurn = (x >= targetCoord); }
-                else if (lightIdx == 1) { targetCoord = cx + 65; readyToTurn = (x <= targetCoord); }
-                else if (lightIdx == 2) { targetCoord = cy - 65; readyToTurn = (y >= targetCoord); }
-                else if (lightIdx == 3) { targetCoord = cy + 65; readyToTurn = (y <= targetCoord); }
+                if (originalLightIdx == 0) { targetCoord = cx + 15; readyToTurn = (x >= targetCoord); }
+                else if (originalLightIdx == 1) { targetCoord = cx - 15; readyToTurn = (x <= targetCoord); }
+                else if (originalLightIdx == 2) { targetCoord = cy + 15; readyToTurn = (y >= targetCoord); }
+                else if (originalLightIdx == 3) { targetCoord = cy - 15; readyToTurn = (y <= targetCoord); }
             }
             
             if (readyToTurn) {
                 // Chỉnh thẳng góc tọa độ trục cũ vào đúng quỹ đạo trục mới
-                if (lightIdx == 0 || lightIdx == 1) this.x = targetCoord;
+                if (originalLightIdx == 0 || originalLightIdx == 1) this.x = targetCoord;
                 else this.y = targetCoord;
 
                 if (turnIntention == 1) { // Rẽ trái
-                    if (lightIdx == 0) direction = -Math.PI/2;
-                    else if (lightIdx == 1) direction = Math.PI/2;
-                    else if (lightIdx == 2) direction = 0;
-                    else if (lightIdx == 3) direction = Math.PI;
-                } else if (turnIntention == 2) { // Rẽ phải
-                    if (lightIdx == 0) direction = Math.PI/2;
-                    else if (lightIdx == 1) direction = -Math.PI/2;
-                    else if (lightIdx == 2) direction = Math.PI;
-                    else if (lightIdx == 3) direction = 0;
+                    if (originalLightIdx == 0) direction = -Math.PI/2;
+                    else if (originalLightIdx == 1) direction = Math.PI/2;
+                    else if (originalLightIdx == 2) direction = 0;
+                    else if (originalLightIdx == 3) direction = Math.PI;
                 }
                 hasTurned = true;
                 lightIdx = getLightIdx(direction); // Cập nhật ngay lightIdx mới
@@ -413,6 +446,12 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 sameLane = (lightIdx < 2)
                         ? Math.abs(other.y - this.y) < laneThreshold
                         : Math.abs(other.x - this.x) < laneThreshold;
+            }
+            
+            // Xử lý collision khi cả 2 xe cùng đang đi trên đường chéo
+            if (this.isTurningDiagonally && other.isTurningDiagonally && this.originalLightIdx == other.originalLightIdx) {
+                sameAxis = true;
+                sameLane = true;
             }
             if (!sameLane) continue;
 
