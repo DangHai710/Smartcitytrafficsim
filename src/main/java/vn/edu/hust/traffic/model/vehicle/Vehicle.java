@@ -26,6 +26,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     protected int targetExitIndex = -1;
     public boolean insideRoundabout = false;
     public double roundaboutAngle = 0.0;
+    protected boolean exitedRoundabout = false;
     protected int spawnSourceIndex = -1;
     protected double laneOffsetVal = 40.0;
 
@@ -65,7 +66,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         for (Intersection inter : intersections) {
             if (inter instanceof RoundaboutIntersection) {
                 double dist = Math.hypot(x - inter.getX(), y - inter.getY());
-                if (dist < 550 && !hasTurned) {
+                if (dist < 550 && !exitedRoundabout) {
                     return inter;
                 }
                 continue;
@@ -666,11 +667,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             double stopDist = d - 180;
             passedStopLine = d <= 180;
 
-            // Yield to circulating vehicles approaching this entry from the left.
+            // Yield to circulating vehicles that will reach this entry while moving counter-clockwise.
             boolean yieldRequired = false;
             for (Vehicle other : allVehicles) {
                 if (other != this && other.insideRoundabout) {
-                    double diff = normalizeAngle(thetaSource - other.roundaboutAngle);
+                    double diff = counterClockwiseDistance(other.roundaboutAngle, thetaSource);
                     if (diff > 0 && diff < 0.6) {
                         yieldRequired = true;
                         break;
@@ -715,17 +716,18 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             double currentR = Math.hypot(x - cx, y - cy);
             double newR = currentR + (targetR - currentR) * 0.08;
 
+            double previousAngle = roundaboutAngle;
             double omega = speed / newR;
-            roundaboutAngle = normalizeAngle(roundaboutAngle + omega * dt);
+            roundaboutAngle = normalizeAngle(roundaboutAngle - omega * dt);
 
             x = cx + newR * Math.cos(roundaboutAngle);
             y = cy + newR * Math.sin(roundaboutAngle);
-            direction = roundaboutAngle + Math.PI / 2.0;
+            direction = roundaboutAngle - Math.PI / 2.0;
 
             // Collision avoidance inside roundabout
             for (Vehicle other : allVehicles) {
                 if (other != this && other.insideRoundabout) {
-                    double angleDiff = normalizeAngle(other.roundaboutAngle - roundaboutAngle);
+                    double angleDiff = counterClockwiseDistance(roundaboutAngle, other.roundaboutAngle);
                     if (angleDiff > 0 && angleDiff < 0.4) {
                         double gap = newR * angleDiff;
                         if (gap < safeDistance) {
@@ -742,16 +744,17 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             }
 
             // Exit condition
-            double exitDiff = normalizeAngle(roundaboutAngle - thetaTarget);
-            if (Math.abs(exitDiff) < 0.1) {
+            if (hasReachedCounterClockwiseExit(previousAngle, roundaboutAngle, thetaTarget)) {
                 insideRoundabout = false;
+                exitedRoundabout = true;
                 hasTurned = true;
                 double exitD = 180;
+                roundaboutAngle = thetaTarget;
                 x = cx + exitD * Math.cos(thetaTarget) - laneOffsetVal * Math.sin(thetaTarget);
                 y = cy + exitD * Math.sin(thetaTarget) + laneOffsetVal * Math.cos(thetaTarget);
                 direction = thetaTarget;
             }
-        } else if (hasTurned) {
+        } else if (exitedRoundabout) {
             // EXITING THE ROUNDABOUT
             double dx = x - cx;
             double dy = y - cy;
@@ -770,7 +773,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             speed = speed + (currentTargetSpeed - speed) * 0.1;
         }
 
-        if (!insideRoundabout && !hasTurned) {
+        if (!insideRoundabout && !exitedRoundabout) {
             movePhysically(dt);
         }
     }
@@ -778,13 +781,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     private int getExitsRemaining(double currentAngle, double targetExitAngle, double[] roadAngles) {
         double targetNorm = normalizeAngle(targetExitAngle);
         double currentNorm = normalizeAngle(currentAngle);
-        double diff = normalizeAngle(targetNorm - currentNorm);
-        if (diff < 0) diff += 2 * Math.PI;
+        double diff = counterClockwiseDistance(currentNorm, targetNorm);
 
         int count = 0;
         for (double roadAngle : roadAngles) {
-            double d = normalizeAngle(roadAngle - currentNorm);
-            if (d < 0) d += 2 * Math.PI;
+            double d = counterClockwiseDistance(currentNorm, roadAngle);
             if (d <= diff) {
                 count++;
             }
@@ -836,7 +837,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         double minCCWDiff = Double.MAX_VALUE;
         int nextExitIdx = -1;
         for (int i = 0; i < roadAngles.length; i++) {
-            double diff = normalizeAngle(roadAngles[i] - currentAngle);
+            double diff = counterClockwiseDistance(currentAngle, roadAngles[i]);
             if (diff > 0 && diff < minCCWDiff) {
                 minCCWDiff = diff;
                 nextExitIdx = i;
@@ -852,5 +853,22 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         while (angle <= -Math.PI) angle += 2 * Math.PI;
         while (angle > Math.PI) angle -= 2 * Math.PI;
         return angle;
+    }
+
+    private double normalizePositiveAngle(double angle) {
+        while (angle < 0) angle += 2 * Math.PI;
+        while (angle >= 2 * Math.PI) angle -= 2 * Math.PI;
+        return angle;
+    }
+
+    private double counterClockwiseDistance(double fromAngle, double toAngle) {
+        return normalizePositiveAngle(fromAngle - toAngle);
+    }
+
+    private boolean hasReachedCounterClockwiseExit(double previousAngle, double currentAngle, double targetAngle) {
+        double travelled = counterClockwiseDistance(previousAngle, currentAngle);
+        double distanceToTarget = counterClockwiseDistance(previousAngle, targetAngle);
+        return distanceToTarget <= travelled + 0.03
+                || Math.abs(normalizeAngle(currentAngle - targetAngle)) < 0.08;
     }
 }

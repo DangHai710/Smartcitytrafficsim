@@ -126,14 +126,71 @@ public class TrafficTest {
         }
 
         assertTrue(vehicle.insideRoundabout);
-        assertTrue(vehicle.roundaboutAngle > 0.0);
-        assertEquals(Math.PI / 2.0, vehicle.getDirection(), 0.25);
+        assertTrue(vehicle.roundaboutAngle < 0.0);
+        assertEquals(-Math.PI / 2.0, vehicle.getDirection(), 0.25);
+    }
+
+    @Test
+    public void fiveWayRoundaboutExitsOnRedDotLaneOfTargetRoad() throws Exception {
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
+        List<Vehicle> vehicles = new ArrayList<>();
+        Vehicle vehicle = new Car("Car1", 781.0, 260.0, 80.0, Math.PI, 26, 13, false);
+        setTargetExitIndex(vehicle, 1);
+        vehicles.add(vehicle);
+
+        double dt = 0.05;
+        for (int i = 0; i < 400 && !vehicle.hasTurned(); i++) {
+            vehicle.update(dt, vehicles, intersections, 1400, 600);
+        }
+
+        assertTrue(vehicle.hasTurned());
+        assertEquals(-Math.PI / 2.0, vehicle.getDirection(), 0.01);
+        assertTrue(vehicle.getX() > 600.0, "x=" + vehicle.getX() + ", y=" + vehicle.getY());
+    }
+
+    @Test
+    public void roadNetworkRoundaboutUsesSameEntryAndExitLaneLogicAfterPreviousTurn() throws Exception {
+        double[] roadNetworkAngles = new double[] {
+                0,
+                -Math.PI / 2,
+                Math.PI,
+                Math.PI / 2,
+                -Math.PI / 4
+        };
+        List<Intersection> intersections = List.of(
+                new RoundaboutIntersection("roundabout1", 1200.0, -500.0, 100.0, roadNetworkAngles));
+        List<Vehicle> vehicles = new ArrayList<>();
+        Vehicle vehicle = new Car("Car1", 1185.0, -1050.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        setTargetExitIndex(vehicle, 0);
+        setBooleanField(vehicle, "hasTurned", true);
+        vehicles.add(vehicle);
+
+        double dt = 0.05;
+        for (int i = 0; i < 500 && vehicle.getDirection() != 0.0; i++) {
+            vehicle.update(dt, vehicles, intersections, 1400, 600);
+        }
+
+        assertEquals(0.0, vehicle.getDirection(), 0.01);
+        assertTrue(vehicle.getX() > 1200.0, "x=" + vehicle.getX() + ", y=" + vehicle.getY());
+        assertTrue(vehicle.getY() > -500.0, "x=" + vehicle.getX() + ", y=" + vehicle.getY());
     }
 
     private int turnIntention(Object spawnPoint) throws Exception {
         Method turnIntention = spawnPoint.getClass().getDeclaredMethod("turnIntention");
         turnIntention.setAccessible(true);
         return (Integer) turnIntention.invoke(spawnPoint);
+    }
+
+    private void setTargetExitIndex(Vehicle vehicle, int exitIndex) throws Exception {
+        Field targetExitIndex = Vehicle.class.getDeclaredField("targetExitIndex");
+        targetExitIndex.setAccessible(true);
+        targetExitIndex.setInt(vehicle, exitIndex);
+    }
+
+    private void setBooleanField(Vehicle vehicle, String fieldName, boolean value) throws Exception {
+        Field field = Vehicle.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.setBoolean(vehicle, value);
     }
 
     private Vehicle runThreeWayVehicle(String id, double x, double y, double direction, int turnIntention,
