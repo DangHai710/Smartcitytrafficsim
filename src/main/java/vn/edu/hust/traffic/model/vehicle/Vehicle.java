@@ -25,6 +25,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     protected int turnIntention = 0; // 0: Thẳng, 1: Rẽ Trái, 2: Rẽ Phải
     protected boolean hasTurned = false;
     protected final int originalLightIdx;
+    protected String activeIntersectionId = null;
+    protected int activeIntersectionEntryLightIdx = -1;
     protected boolean isTurningDiagonally = false;
     protected double diagonalTurnCenterX = 0.0;
     protected double diagonalTurnCenterY = 0.0;
@@ -73,7 +75,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         for (Intersection inter : intersections) {
             if (inter instanceof RoundaboutIntersection) {
                 RoundaboutIntersection roundabout = (RoundaboutIntersection) inter;
-                if (!exitedRoundabout && isOnRoundaboutApproach(roundabout)) {
+                if (!exitedRoundabout
+                        && (insideRoundabout
+                                || isInsideRoundaboutBody(roundabout)
+                                || isOnRoundaboutApproach(roundabout))) {
                     return inter;
                 }
                 continue;
@@ -122,6 +127,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
         Intersection targetInter = getTargetIntersection(intersections);
         if (targetInter == null) {
+            activeIntersectionId = null;
+            activeIntersectionEntryLightIdx = -1;
             this.speed = baseSpeed;
             movePhysically(dt);
             if (isTurningDiagonally) {
@@ -135,18 +142,20 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             return;
         }
 
+        beginIntersectionIfNeeded(targetInter);
         double cx = targetInter.getX();
         double cy = targetInter.getY();
         int lightIdx = getLightIdx(direction);
+        int entryLightIdx = getIntersectionEntryLightIdx();
 
         // BẢO VỆ NGÃ 3: RTL không rẽ trái xuống Nam, LTR không rẽ phải xuống Nam, TTB không đi thẳng xuống Nam
         if (targetInter instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection
                 && !hasTurned && !isTurningDiagonally) {
-            if (originalLightIdx == 0 && turnIntention == 2) { // LTR (đi Đông) không thể rẽ phải (Nam)
+            if (entryLightIdx == 0 && turnIntention == 2) { // LTR (đi Đông) không thể rẽ phải (Nam)
                 turnIntention = Math.random() < 0.5 ? 0 : 1;
-            } else if (originalLightIdx == 1 && turnIntention == 1) { // RTL (đi Tây) không thể rẽ trái (Nam)
+            } else if (entryLightIdx == 1 && turnIntention == 1) { // RTL (đi Tây) không thể rẽ trái (Nam)
                 turnIntention = Math.random() < 0.5 ? 0 : 2;
-            } else if (originalLightIdx == 2 && turnIntention == 0) { // TTB (đi Nam) không thể đi thẳng (Nam)
+            } else if (entryLightIdx == 2 && turnIntention == 0) { // TTB (đi Nam) không thể đi thẳng (Nam)
                 turnIntention = Math.random() < 0.5 ? 1 : 2;
             }
         }
@@ -200,37 +209,37 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
             if (!isTurningDiagonally) {
                 boolean readyToDiagonal = false;
-                if (originalLightIdx == 0) readyToDiagonal = (x >= cx - TURN_DIST);
-                else if (originalLightIdx == 1) readyToDiagonal = (x <= cx + TURN_DIST);
-                else if (originalLightIdx == 2) readyToDiagonal = (y >= cy - TURN_DIST);
-                else if (originalLightIdx == 3) readyToDiagonal = (y <= cy + TURN_DIST);
+                if (entryLightIdx == 0) readyToDiagonal = (x >= cx - TURN_DIST);
+                else if (entryLightIdx == 1) readyToDiagonal = (x <= cx + TURN_DIST);
+                else if (entryLightIdx == 2) readyToDiagonal = (y >= cy - TURN_DIST);
+                else if (entryLightIdx == 3) readyToDiagonal = (y <= cy + TURN_DIST);
 
                 if (readyToDiagonal) {
                     isTurningDiagonally = true;
                     diagonalTurnCenterX = cx;
                     diagonalTurnCenterY = cy;
                     passedStopLine = true; // Bỏ qua đèn đỏ vì làn rẽ phải luôn thông
-                    if (originalLightIdx == 0) { x = cx - TURN_DIST; direction = Math.PI/4; }
-                    else if (originalLightIdx == 1) { x = cx + TURN_DIST; direction = -Math.PI*3/4; }
-                    else if (originalLightIdx == 2) { y = cy - TURN_DIST; direction = Math.PI*3/4; }
-                    else if (originalLightIdx == 3) { y = cy + TURN_DIST; direction = -Math.PI/4; }
+                    if (entryLightIdx == 0) { x = cx - TURN_DIST; direction = Math.PI/4; }
+                    else if (entryLightIdx == 1) { x = cx + TURN_DIST; direction = -Math.PI*3/4; }
+                    else if (entryLightIdx == 2) { y = cy - TURN_DIST; direction = Math.PI*3/4; }
+                    else if (entryLightIdx == 3) { y = cy + TURN_DIST; direction = -Math.PI/4; }
                 }
             }
 
             if (isTurningDiagonally) {
                 boolean endDiagonal = false;
-                if (originalLightIdx == 0) endDiagonal = (x >= cx - END_LANE);
-                else if (originalLightIdx == 1) endDiagonal = (x <= cx + END_LANE);
-                else if (originalLightIdx == 2) endDiagonal = (y >= cy - END_LANE);
-                else if (originalLightIdx == 3) endDiagonal = (y <= cy + END_LANE);
+                if (entryLightIdx == 0) endDiagonal = (x >= cx - END_LANE);
+                else if (entryLightIdx == 1) endDiagonal = (x <= cx + END_LANE);
+                else if (entryLightIdx == 2) endDiagonal = (y >= cy - END_LANE);
+                else if (entryLightIdx == 3) endDiagonal = (y <= cy + END_LANE);
 
                 if (endDiagonal) {
                     isTurningDiagonally = false;
                     hasTurned = true;
-                    if (originalLightIdx == 0) { x = cx - END_LANE; direction = Math.PI/2; }
-                    else if (originalLightIdx == 1) { x = cx + END_LANE; direction = -Math.PI/2; }
-                    else if (originalLightIdx == 2) { y = cy - END_LANE; direction = Math.PI; }
-                    else if (originalLightIdx == 3) { y = cy + END_LANE; direction = 0; }
+                    if (entryLightIdx == 0) { x = cx - END_LANE; direction = Math.PI/2; }
+                    else if (entryLightIdx == 1) { x = cx + END_LANE; direction = -Math.PI/2; }
+                    else if (entryLightIdx == 2) { y = cy - END_LANE; direction = Math.PI; }
+                    else if (entryLightIdx == 3) { y = cy + END_LANE; direction = 0; }
 
                     lightIdx = getLightIdx(direction); // Cập nhật lại tín hiệu đèn sau khi nắn thẳng trục
                 }
@@ -244,22 +253,22 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
             // Tính toán tọa độ chính xác để sau khi bẻ lái, xe nằm đúng boong giữa làn
             if (turnIntention == 1) { // Rẽ trái (vào làn priority offset 15)
-                if (originalLightIdx == 0) { targetCoord = cx + 15; readyToTurn = (x >= targetCoord); }
-                else if (originalLightIdx == 1) { targetCoord = cx - 15; readyToTurn = (x <= targetCoord); }
-                else if (originalLightIdx == 2) { targetCoord = cy + 15; readyToTurn = (y >= targetCoord); }
-                else if (originalLightIdx == 3) { targetCoord = cy - 15; readyToTurn = (y <= targetCoord); }
+                if (entryLightIdx == 0) { targetCoord = cx + 15; readyToTurn = (x >= targetCoord); }
+                else if (entryLightIdx == 1) { targetCoord = cx - 15; readyToTurn = (x <= targetCoord); }
+                else if (entryLightIdx == 2) { targetCoord = cy + 15; readyToTurn = (y >= targetCoord); }
+                else if (entryLightIdx == 3) { targetCoord = cy - 15; readyToTurn = (y <= targetCoord); }
             }
 
             if (readyToTurn) {
                 // Chỉnh thẳng góc tọa độ trục cũ vào đúng quỹ đạo trục mới
-                if (originalLightIdx == 0 || originalLightIdx == 1) this.x = targetCoord;
+                if (entryLightIdx == 0 || entryLightIdx == 1) this.x = targetCoord;
                 else this.y = targetCoord;
 
                 if (turnIntention == 1) { // Rẽ trái
-                    if (originalLightIdx == 0) direction = -Math.PI/2;
-                    else if (originalLightIdx == 1) direction = Math.PI/2;
-                    else if (originalLightIdx == 2) direction = 0;
-                    else if (originalLightIdx == 3) direction = Math.PI;
+                    if (entryLightIdx == 0) direction = -Math.PI/2;
+                    else if (entryLightIdx == 1) direction = Math.PI/2;
+                    else if (entryLightIdx == 2) direction = 0;
+                    else if (entryLightIdx == 3) direction = Math.PI;
                 }
                 hasTurned = true;
                 lightIdx = getLightIdx(direction); // Cập nhật ngay lightIdx mới
@@ -671,6 +680,14 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         double entryMergeDistance = roundaboutLaneMergeDistance();
         double targetExitAngle = getRoundaboutExitLaneAngle(thetaTarget);
 
+        if (!insideRoundabout && isInsideRoundaboutBody(roundabout)) {
+            insideRoundabout = true;
+            roundaboutAngle = Math.atan2(y - cy, x - cx);
+            double currentR = clampRoundaboutRadius(Math.hypot(x - cx, y - cy));
+            x = cx + currentR * Math.cos(roundaboutAngle);
+            y = cy + currentR * Math.sin(roundaboutAngle);
+        }
+
         double safeDistance = (width > 30) ? 50 : 30;
         double currentTargetSpeed = baseSpeed;
         boolean shouldStop = false;
@@ -827,6 +844,22 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         return Math.max(0.0, ROAD_HALF_WIDTH - height / 2.0);
     }
 
+    private void beginIntersectionIfNeeded(Intersection intersection) {
+        String id = intersection.getId();
+        if (id.equals(activeIntersectionId)) {
+            return;
+        }
+
+        activeIntersectionId = id;
+        activeIntersectionEntryLightIdx = getLightIdx(direction);
+        hasTurned = false;
+        passedStopLine = false;
+    }
+
+    private int getIntersectionEntryLightIdx() {
+        return activeIntersectionEntryLightIdx >= 0 ? activeIntersectionEntryLightIdx : originalLightIdx;
+    }
+
     private boolean isAlignedWithIntersectionRoad(Intersection inter, int lightIdx) {
         double lateralLimit = ROAD_HALF_WIDTH + width / 2.0;
         if (lightIdx < 2) {
@@ -859,6 +892,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 && forwardDistance < ROUNDABOUT_CAPTURE_DISTANCE
                 && lateralDistance <= ROAD_HALF_WIDTH + width / 2.0
                 && headingDiff < 0.65;
+    }
+
+    private boolean isInsideRoundaboutBody(RoundaboutIntersection roundabout) {
+        return Math.hypot(x - roundabout.getX(), y - roundabout.getY())
+                <= ROUNDABOUT_MAX_DRIVE_RADIUS + getHalfLength();
     }
 
     private double roundaboutLaneMergeDistance() {
@@ -928,12 +966,13 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             return;
         }
 
+        int entryLightIdx = getIntersectionEntryLightIdx();
         double endLane = 65.0;
         boolean endDiagonal = false;
-        if (originalLightIdx == 0) endDiagonal = (x >= cx - endLane);
-        else if (originalLightIdx == 1) endDiagonal = (x <= cx + endLane);
-        else if (originalLightIdx == 2) endDiagonal = (y >= cy - endLane);
-        else if (originalLightIdx == 3) endDiagonal = (y <= cy + endLane);
+        if (entryLightIdx == 0) endDiagonal = (x >= cx - endLane);
+        else if (entryLightIdx == 1) endDiagonal = (x <= cx + endLane);
+        else if (entryLightIdx == 2) endDiagonal = (y >= cy - endLane);
+        else if (entryLightIdx == 3) endDiagonal = (y <= cy + endLane);
 
         if (!endDiagonal) {
             return;
@@ -941,10 +980,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
         isTurningDiagonally = false;
         hasTurned = true;
-        if (originalLightIdx == 0) { x = cx - endLane; direction = Math.PI / 2; }
-        else if (originalLightIdx == 1) { x = cx + endLane; direction = -Math.PI / 2; }
-        else if (originalLightIdx == 2) { y = cy - endLane; direction = Math.PI; }
-        else if (originalLightIdx == 3) { y = cy + endLane; direction = 0; }
+        if (entryLightIdx == 0) { x = cx - endLane; direction = Math.PI / 2; }
+        else if (entryLightIdx == 1) { x = cx + endLane; direction = -Math.PI / 2; }
+        else if (entryLightIdx == 2) { y = cy - endLane; direction = Math.PI; }
+        else if (entryLightIdx == 3) { y = cy + endLane; direction = 0; }
     }
 
     private boolean continueDiagonalRightTurn(double dt) {

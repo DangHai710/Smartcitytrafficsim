@@ -213,6 +213,30 @@ public class TrafficTest {
     }
 
     @Test
+    public void roadNetworkVehicleLeavingRoundaboutDoesNotGoStraightThroughThreeWayMissingRoad() throws Exception {
+        List<TrafficLight> lights = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            TrafficLight light = new TrafficLight();
+            light.forceState(TrafficLight.State.GREEN, 999);
+            light.forceLeftTurnState(TrafficLight.State.GREEN, 999);
+            lights.add(light);
+        }
+        List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
+        Vehicle vehicle = new Car("Car1", 1215.0, 120.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        vehicle.setTurnIntention(0);
+        setBooleanField(vehicle, "hasTurned", true);
+        setBooleanField(vehicle, "exitedRoundabout", true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(vehicle));
+
+        for (int i = 0; i < 160 && Math.abs(vehicle.getDirection() - Math.PI / 2.0) < 0.01; i++) {
+            vehicle.update(0.05, vehicles, intersections, 1400, 600);
+        }
+
+        assertNotEquals(Math.PI / 2.0, vehicle.getDirection(), 0.01);
+        assertTrue(vehicle.getY() < 380.0, "x=" + vehicle.getX() + ", y=" + vehicle.getY());
+    }
+
+    @Test
     public void fiveWayRoundaboutKeepsCirculatingVehicleInsideRoadBand() throws Exception {
         List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
         List<Vehicle> vehicles = new ArrayList<>();
@@ -226,6 +250,22 @@ public class TrafficTest {
 
         double radius = Math.hypot(vehicle.getX() - 600.0, vehicle.getY() - 300.0);
         assertTrue(radius >= 112.0 && radius <= 166.0, "radius=" + radius);
+    }
+
+    @Test
+    public void fiveWayRoundaboutCapturesVehicleBeforeItCrossesGreenIsland() throws Exception {
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
+        List<Vehicle> vehicles = new ArrayList<>();
+        Vehicle vehicle = new Car("Car1", 560.0, 300.0, 80.0, 0.0, 26, 13, false);
+        setTargetExitIndex(vehicle, 0);
+        vehicles.add(vehicle);
+
+        vehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        double radius = Math.hypot(vehicle.getX() - 600.0, vehicle.getY() - 300.0);
+        assertTrue(vehicle.insideRoundabout);
+        assertTrue(radius >= 112.0, "radius=" + radius);
+        assertNotEquals(0.0, vehicle.getDirection(), 0.01);
     }
 
     @Test
