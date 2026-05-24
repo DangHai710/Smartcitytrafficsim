@@ -12,6 +12,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
+import vn.edu.hust.traffic.controller.SimulationMode;
 import vn.edu.hust.traffic.controller.TrafficController;
 import vn.edu.hust.traffic.utils.SoundPlayer;
 import vn.edu.hust.traffic.view.camera.Camera;
@@ -64,7 +65,10 @@ public class SimulationWindow extends Application {
         controlPanel.setOnPlay(() -> running = true);
         controlPanel.setOnPause(() -> running = false);
         controlPanel.setOnReset(this::resetSimulation);
-        controlPanel.setOnMapTypeChanged(settings::setMapType);
+        controlPanel.setOnMapTypeChanged(mapType -> {
+            settings.setMapType(mapType);
+            resetSimulation();
+        });
         controlPanel.setOnRenderModeChanged(settings::setRenderMode);
         controlPanel.setOnLightDisplayModeChanged(settings::setLightDisplayMode);
         controlPanel.setOnControlModeChanged(mode -> {
@@ -170,10 +174,18 @@ public class SimulationWindow extends Application {
     }
 
     private void resetSimulation() {
-        TrafficController controller = new TrafficController();
+        TrafficController controller = new TrafficController(toSimulationMode(settings.getMapType()));
         controllerAdapter = new TrafficControllerAdapter(controller);
         controllerAdapter.setAutoMode(settings.getControlMode() == ControlMode.AUTO);
         controllerAdapter.setTrafficDensity(settings.getTrafficDensity());
+    }
+
+    private SimulationMode toSimulationMode(MapType mapType) {
+        return switch (mapType) {
+            case T_INTERSECTION -> SimulationMode.THREE_WAY_INTERSECTION;
+            case CROSS_INTERSECTION -> SimulationMode.CROSS_INTERSECTION;
+            case FIVE_WAY_INTERSECTION, ROAD_NETWORK -> SimulationMode.ROAD_NETWORK;
+        };
     }
 
     private void playVehicleSound(String type) {

@@ -10,6 +10,7 @@ public class RoadRenderer {
     private static final double CROSS_X = 400.0;
     private static final double THREE_WAY_X = 1000.0;
     private static final double CENTER_Y = 300.0;
+    private static final double STOP_OFFSET = 120.0;
     private static final Color ROAD = Color.web("#3b3f46");
     private static final Color ROAD_DARK = Color.web("#30343a");
     private static final Color LANE = Color.web("#f1f3f2");
@@ -51,12 +52,29 @@ public class RoadRenderer {
         drawRoad(gc, camera, CROSS_X, CENTER_Y, 720, 160, 90);
         drawRoad(gc, camera, THREE_WAY_X, CENTER_Y + 160, 440, 160, 90);
 
-        drawLaneMarkings(gc, camera, true, CENTER_Y, 0, 1400);
-        drawLaneMarkings(gc, camera, false, CROSS_X, 0, 600);
-        drawLaneMarkings(gc, camera, false, THREE_WAY_X, CENTER_Y, 600);
+        drawNetworkTurnSlipRoads(gc, camera);
+
+        drawHorizontalNetworkLaneMarkings(gc, camera);
+        drawVerticalIntersectionLaneMarkings(gc, camera, CROSS_X, true);
+        drawVerticalIntersectionLaneMarkings(gc, camera, THREE_WAY_X, false);
+
+        drawCrossIntersectionArrows(gc, camera, CROSS_X);
+        drawThreeWayIntersectionArrows(gc, camera, THREE_WAY_X);
 
         drawStopLines(gc, camera, CROSS_X, true);
         drawStopLines(gc, camera, THREE_WAY_X, false);
+        drawCrosswalks(gc, camera, CROSS_X, true);
+        drawCrosswalks(gc, camera, THREE_WAY_X, false);
+    }
+
+    private void drawNetworkTurnSlipRoads(GraphicsContext gc, Camera camera) {
+        drawIntersectionCorner(gc, camera, CROSS_X, CENTER_Y, -1, -1);
+        drawIntersectionCorner(gc, camera, CROSS_X, CENTER_Y, 1, -1);
+        drawIntersectionCorner(gc, camera, CROSS_X, CENTER_Y, -1, 1);
+        drawIntersectionCorner(gc, camera, CROSS_X, CENTER_Y, 1, 1);
+
+        drawIntersectionCorner(gc, camera, THREE_WAY_X, CENTER_Y, -1, 1);
+        drawIntersectionCorner(gc, camera, THREE_WAY_X, CENTER_Y, 1, 1);
     }
 
     private void drawCrossIntersectionAt(GraphicsContext gc, Camera camera, double centerX, double fromX, double toX) {
@@ -66,8 +84,10 @@ public class RoadRenderer {
         drawIntersectionCorner(gc, camera, centerX, CENTER_Y, 1, -1);
         drawIntersectionCorner(gc, camera, centerX, CENTER_Y, -1, 1);
         drawIntersectionCorner(gc, camera, centerX, CENTER_Y, 1, 1);
-        drawLaneMarkings(gc, camera, true, CENTER_Y, fromX, toX);
-        drawLaneMarkings(gc, camera, false, centerX, 0, 600);
+        drawLaneMarkings(gc, camera, true, CENTER_Y, fromX, centerX - STOP_OFFSET);
+        drawLaneMarkings(gc, camera, true, CENTER_Y, centerX + STOP_OFFSET, toX);
+        drawVerticalIntersectionLaneMarkings(gc, camera, centerX, true);
+        drawCrossIntersectionArrows(gc, camera, centerX);
         drawStopLines(gc, camera, centerX, true);
         drawCrosswalks(gc, camera, centerX, true);
     }
@@ -78,10 +98,39 @@ public class RoadRenderer {
         fillWorldRect(gc, camera, centerX - 80, CENTER_Y - 80, 160, 160, ROAD);
         drawIntersectionCorner(gc, camera, centerX, CENTER_Y, -1, 1);
         drawIntersectionCorner(gc, camera, centerX, CENTER_Y, 1, 1);
-        drawLaneMarkings(gc, camera, true, CENTER_Y, fromX, toX);
-        drawLaneMarkings(gc, camera, false, centerX, CENTER_Y, 600);
+        drawLaneMarkings(gc, camera, true, CENTER_Y, fromX, centerX - STOP_OFFSET);
+        drawLaneMarkings(gc, camera, true, CENTER_Y, centerX + STOP_OFFSET, toX);
+        drawVerticalIntersectionLaneMarkings(gc, camera, centerX, false);
+        drawThreeWayIntersectionArrows(gc, camera, centerX);
         drawStopLines(gc, camera, centerX, false);
         drawCrosswalks(gc, camera, centerX, false);
+    }
+
+    private void drawHorizontalNetworkLaneMarkings(GraphicsContext gc, Camera camera) {
+        drawLaneMarkings(gc, camera, true, CENTER_Y, 0, CROSS_X - STOP_OFFSET);
+        drawLaneMarkings(gc, camera, true, CENTER_Y, CROSS_X + STOP_OFFSET, THREE_WAY_X - STOP_OFFSET);
+        drawLaneMarkings(gc, camera, true, CENTER_Y, THREE_WAY_X + STOP_OFFSET, 1400);
+    }
+
+    private void drawVerticalIntersectionLaneMarkings(GraphicsContext gc, Camera camera,
+            double centerX, boolean includeNorthApproach) {
+        if (includeNorthApproach) {
+            drawLaneMarkings(gc, camera, false, centerX, 0, CENTER_Y - STOP_OFFSET);
+        }
+        drawLaneMarkings(gc, camera, false, centerX, CENTER_Y + STOP_OFFSET, 600);
+    }
+
+    private void drawCrossIntersectionArrows(GraphicsContext gc, Camera camera, double centerX) {
+        drawLaneArrows(gc, camera, centerX - STOP_OFFSET, CENTER_Y, 0, "left", "straight", "straight_right");
+        drawLaneArrows(gc, camera, centerX + STOP_OFFSET, CENTER_Y, 180, "left", "straight", "straight_right");
+        drawLaneArrows(gc, camera, centerX, CENTER_Y - STOP_OFFSET, 90, "left", "straight", "straight_right");
+        drawLaneArrows(gc, camera, centerX, CENTER_Y + STOP_OFFSET, 270, "left", "straight", "straight_right");
+    }
+
+    private void drawThreeWayIntersectionArrows(GraphicsContext gc, Camera camera, double centerX) {
+        drawLaneArrows(gc, camera, centerX - STOP_OFFSET, CENTER_Y, 0, "straight", "straight", "straight_right");
+        drawLaneArrows(gc, camera, centerX + STOP_OFFSET, CENTER_Y, 180, "left", "straight", "straight");
+        drawLaneArrows(gc, camera, centerX, CENTER_Y + STOP_OFFSET, 270, "left", "left_right", "right");
     }
 
     private void drawRoad(GraphicsContext gc, Camera camera, double centerX, double centerY,
@@ -122,12 +171,75 @@ public class RoadRenderer {
     }
 
     private void drawStopLines(GraphicsContext gc, Camera camera, double centerX, boolean includeNorthApproach) {
-        strokeWorldLine(gc, camera, centerX - 100, CENTER_Y + 5, centerX - 100, CENTER_Y + 75, LANE, 4.0, false);
-        strokeWorldLine(gc, camera, centerX + 100, CENTER_Y - 5, centerX + 100, CENTER_Y - 75, LANE, 4.0, false);
+        strokeWorldLine(gc, camera, centerX - STOP_OFFSET, CENTER_Y + 5, centerX - STOP_OFFSET, CENTER_Y + 75, LANE, 4.0, false);
+        strokeWorldLine(gc, camera, centerX + STOP_OFFSET, CENTER_Y - 5, centerX + STOP_OFFSET, CENTER_Y - 75, LANE, 4.0, false);
         if (includeNorthApproach) {
-            strokeWorldLine(gc, camera, centerX - 75, CENTER_Y - 100, centerX - 5, CENTER_Y - 100, LANE, 4.0, false);
+            strokeWorldLine(gc, camera, centerX - 75, CENTER_Y - STOP_OFFSET, centerX - 5, CENTER_Y - STOP_OFFSET, LANE, 4.0, false);
         }
-        strokeWorldLine(gc, camera, centerX + 75, CENTER_Y + 100, centerX + 5, CENTER_Y + 100, LANE, 4.0, false);
+        strokeWorldLine(gc, camera, centerX + 75, CENTER_Y + STOP_OFFSET, centerX + 5, CENTER_Y + STOP_OFFSET, LANE, 4.0, false);
+    }
+
+    private void drawLaneArrows(GraphicsContext gc, Camera camera, double x, double y, double rotationDegree,
+            String lane1, String lane2, String lane3) {
+        Point2D p = camera.worldToScreen(x, y);
+        double scale = camera.getScale();
+
+        gc.save();
+        gc.translate(p.getX(), p.getY());
+        gc.rotate(rotationDegree);
+        gc.scale(scale, scale);
+        gc.setStroke(LANE);
+        gc.setLineWidth(2.0);
+        gc.setLineDashes(new double[0]);
+
+        double arrowX = -25;
+        drawSingleArrow(gc, arrowX, 15, lane1);
+        drawSingleArrow(gc, arrowX, 40, lane2);
+        drawSingleArrow(gc, arrowX, 65, lane3);
+
+        gc.restore();
+    }
+
+    private void drawSingleArrow(GraphicsContext gc, double x, double y, String type) {
+        if ("none".equals(type)) {
+            return;
+        }
+
+        gc.save();
+        gc.translate(x, y);
+
+        if ("straight".equals(type)) {
+            gc.strokeLine(-10, 0, 10, 0);
+            gc.strokeLine(10, 0, 5, -4);
+            gc.strokeLine(10, 0, 5, 4);
+        } else if ("left".equals(type)) {
+            gc.strokeLine(-10, 0, 3, 0);
+            gc.strokeLine(3, 0, 3, -10);
+            gc.strokeLine(3, -10, 0, -7);
+            gc.strokeLine(3, -10, 6, -7);
+        } else if ("right".equals(type)) {
+            gc.strokeLine(-10, 0, 3, 0);
+            gc.strokeLine(3, 0, 3, 10);
+            gc.strokeLine(3, 10, 0, 7);
+            gc.strokeLine(3, 10, 6, 7);
+        } else if ("left_right".equals(type)) {
+            gc.strokeLine(-10, 0, 3, 0);
+            gc.strokeLine(3, 0, 3, -10);
+            gc.strokeLine(3, -10, 0, -7);
+            gc.strokeLine(3, -10, 6, -7);
+            gc.strokeLine(3, 0, 3, 10);
+            gc.strokeLine(3, 10, 0, 7);
+            gc.strokeLine(3, 10, 6, 7);
+        } else if ("straight_right".equals(type)) {
+            gc.strokeLine(-10, 0, 10, 0);
+            gc.strokeLine(10, 0, 5, -4);
+            gc.strokeLine(10, 0, 5, 4);
+            gc.strokeLine(3, 0, 3, 10);
+            gc.strokeLine(3, 10, 0, 7);
+            gc.strokeLine(3, 10, 6, 7);
+        }
+
+        gc.restore();
     }
 
     private void drawCrosswalks(GraphicsContext gc, Camera camera, double centerX, boolean includeNorthApproach) {

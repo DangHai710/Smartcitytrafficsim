@@ -32,6 +32,9 @@ public class TrafficControllerAdapter {
 
         Object phaseController = invokeNoArg(controller, "getPhaseController1");
         if (phaseController == null) {
+            phaseController = invokeNoArg(controller, "getPhaseController2");
+        }
+        if (phaseController == null) {
             phaseController = invokeNoArg(controller, "getPhaseController");
         }
         int phaseIndex = readInt(phaseController, "getCurrentPhase", -1);
