@@ -5,9 +5,9 @@ import java.util.List;
 /**
  * Giao lộ ngã 3 (T-junction lật ngược).
  * Nhánh ngang: Trái -> Phải (0) và Phải -> Trái (PI)
- * Nhánh dọc: Dưới -> Trên (-PI/2)
+ * Nhánh dọc: Trên -> Dưới (PI/2)
  *
- * Index lights: [0]=Trái→Phải, [1]=Phải→Trái, [2]=Dưới→Trên
+ * Index lights: [0]=Trái→Phải, [1]=Phải→Trái, [2]=Trên→Dưới
  */
 public class ThreeWayIntersection extends Intersection {
 
@@ -23,7 +23,7 @@ public class ThreeWayIntersection extends Intersection {
     public int resolveIndex(double direction) {
         if      (Math.abs(direction - 0)            < 0.1) return 0; // LTR
         else if (Math.abs(direction - Math.PI)      < 0.1) return 1; // RTL
-        else if (Math.abs(direction + Math.PI / 2)  < 0.1) return 2; // BTT
+        else if (Math.abs(direction - Math.PI / 2)  < 0.1) return 2; // TTB
         return 0; // fallback
     }
 

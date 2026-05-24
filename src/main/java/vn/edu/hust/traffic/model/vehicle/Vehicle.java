@@ -2,6 +2,7 @@ package vn.edu.hust.traffic.model.vehicle;
 
 import vn.edu.hust.traffic.model.map.TrafficLight;
 import vn.edu.hust.traffic.model.map.Intersection;
+import vn.edu.hust.traffic.model.map.RoundaboutIntersection;
 import java.util.List;
 
 /**
@@ -18,6 +19,15 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     protected boolean hasTurned = false;
     protected final int originalLightIdx;
     protected boolean isTurningDiagonally = false;
+    protected double diagonalTurnCenterX = 0.0;
+    protected double diagonalTurnCenterY = 0.0;
+
+    // Roundabout routing and state fields
+    protected int targetExitIndex = -1;
+    public boolean insideRoundabout = false;
+    public double roundaboutAngle = 0.0;
+    protected int spawnSourceIndex = -1;
+    protected double laneOffsetVal = 40.0;
 
     public Vehicle(String id, double x, double y, double speed, double direction, double width, double height, boolean isPriorityVehicle) {
         this.id = id;
@@ -51,26 +61,33 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         Intersection target = null;
         double minPositiveDist = Double.MAX_VALUE;
         double hl = getHalfLength();
-        
+
         for (Intersection inter : intersections) {
+            if (inter instanceof RoundaboutIntersection) {
+                double dist = Math.hypot(x - inter.getX(), y - inter.getY());
+                if (dist < 550 && !hasTurned) {
+                    return inter;
+                }
+                continue;
+            }
             double stopX_LTR = inter.getX() - 120;
             double stopX_RTL = inter.getX() + 120;
             double stopY_TTB = inter.getY() - 120;
             double stopY_BTT = inter.getY() + 120;
-            
+
             int lightIdx = isTurningDiagonally ? originalLightIdx : getLightIdx(direction);
             double dist = Double.MAX_VALUE;
-            
+
             switch (lightIdx) {
                 case 0: dist = stopX_LTR - (x + hl); break;
                 case 1: dist = (x - hl) - stopX_RTL; break;
                 case 2: dist = stopY_TTB - (y + hl); break;
                 case 3: dist = (y - hl) - stopY_BTT; break;
             }
-            
+
             // Đang ở trong ngã tư (đã qua vạch dừng nhưng chưa thoát hẳn, bán kính ngã tư ~200)
             if (dist <= 0 && dist > -200) {
-                return inter; 
+                return inter;
             }
             // Đang tiến tới ngã tư
             if (dist > 0 && dist < minPositiveDist) {
@@ -91,28 +108,38 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         if (targetInter == null) {
             this.speed = baseSpeed;
             movePhysically(dt);
+            if (isTurningDiagonally) {
+                finishDiagonalRightTurnIfNeeded(diagonalTurnCenterX, diagonalTurnCenterY);
+            }
+            return;
+        }
+
+        if (targetInter instanceof RoundaboutIntersection) {
+            updateRoundabout(dt, allVehicles, (RoundaboutIntersection) targetInter);
             return;
         }
 
         double cx = targetInter.getX();
         double cy = targetInter.getY();
         int lightIdx = getLightIdx(direction);
-        
-        // BẢO VỆ NGÃ 3: RTL không rẽ phải lên Bắc, LTR không rẽ trái lên Bắc, BTT không đi thẳng lên Bắc
-        if (targetInter instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection) {
-            if (lightIdx == 0 && turnIntention == 1) { // LTR (đi Đông) không thể rẽ trái (Bắc)
-                turnIntention = Math.random() < 0.5 ? 0 : 2;
-            } else if (lightIdx == 1 && turnIntention == 2) { // RTL (đi Tây) không thể rẽ phải (Bắc)
+
+        // BẢO VỆ NGÃ 3: RTL không rẽ trái xuống Nam, LTR không rẽ phải xuống Nam, TTB không đi thẳng xuống Nam
+        if (targetInter instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection
+                && !hasTurned && !isTurningDiagonally) {
+            if (originalLightIdx == 0 && turnIntention == 2) { // LTR (đi Đông) không thể rẽ phải (Nam)
                 turnIntention = Math.random() < 0.5 ? 0 : 1;
-            } else if (lightIdx == 3 && turnIntention == 0) { // BTT (đi Bắc) không thể đi thẳng (Bắc)
+            } else if (originalLightIdx == 1 && turnIntention == 1) { // RTL (đi Tây) không thể rẽ trái (Nam)
+                turnIntention = Math.random() < 0.5 ? 0 : 2;
+            } else if (originalLightIdx == 2 && turnIntention == 0) { // TTB (đi Nam) không thể đi thẳng (Nam)
                 turnIntention = Math.random() < 0.5 ? 1 : 2;
             }
         }
-        
+
         TrafficLight light = null;
         if (targetInter instanceof vn.edu.hust.traffic.model.map.CrossIntersection) {
             light = targetInter.getLights().get(lightIdx);
-        } else if (targetInter instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection) {
+        } else if (targetInter instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection
+                && !hasTurned && !isTurningDiagonally) {
             light = ((vn.edu.hust.traffic.model.map.ThreeWayIntersection)targetInter).getLightForDirection(direction);
         }
         if (light == null) {
@@ -130,26 +157,26 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         double hl = getHalfLength();
 
         switch (lightIdx) {
-            case 0: 
+            case 0:
                 distToStopLine = stopX_LTR - (x + hl);
                 passedStopLine = (x + hl) >= stopX_LTR;
                 break;
-            case 1: 
+            case 1:
                 distToStopLine = (x - hl) - stopX_RTL;
                 passedStopLine = (x - hl) <= stopX_RTL;
                 break;
-            case 2: 
+            case 2:
                 distToStopLine = stopY_TTB - (y + hl);
                 passedStopLine = (y + hl) >= stopY_TTB;
                 break;
-            case 3: 
+            case 3:
                 distToStopLine = (y - hl) - stopY_BTT;
                 passedStopLine = (y - hl) <= stopY_BTT;
                 break;
         }
 
         // BƯỚC 0.5: Kiểm tra và thực hiện rẽ nếu xe đang ở giữa ngã tư
-        
+
         // THÊM MỚI: QUỸ ĐẠO RẼ PHẢI CHÉO GÓC (VÀO ĐƯỜNG RẼ TẮT)
         if (!hasTurned && turnIntention == 2) {
             double TURN_DIST = 233.0;
@@ -164,6 +191,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
                 if (readyToDiagonal) {
                     isTurningDiagonally = true;
+                    diagonalTurnCenterX = cx;
+                    diagonalTurnCenterY = cy;
                     passedStopLine = true; // Bỏ qua đèn đỏ vì làn rẽ phải luôn thông
                     if (originalLightIdx == 0) { x = cx - TURN_DIST; direction = Math.PI/4; }
                     else if (originalLightIdx == 1) { x = cx + TURN_DIST; direction = -Math.PI*3/4; }
@@ -186,7 +215,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                     else if (originalLightIdx == 1) { x = cx + END_LANE; direction = -Math.PI/2; }
                     else if (originalLightIdx == 2) { y = cy - END_LANE; direction = Math.PI; }
                     else if (originalLightIdx == 3) { y = cy + END_LANE; direction = 0; }
-                    
+
                     lightIdx = getLightIdx(direction); // Cập nhật lại tín hiệu đèn sau khi nắn thẳng trục
                 }
             }
@@ -196,7 +225,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         if (!hasTurned && turnIntention == 1 && passedStopLine) {
             boolean readyToTurn = false;
             double targetCoord = 0;
-            
+
             // Tính toán tọa độ chính xác để sau khi bẻ lái, xe nằm đúng boong giữa làn
             if (turnIntention == 1) { // Rẽ trái (vào làn priority offset 15)
                 if (originalLightIdx == 0) { targetCoord = cx + 15; readyToTurn = (x >= targetCoord); }
@@ -204,7 +233,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 else if (originalLightIdx == 2) { targetCoord = cy + 15; readyToTurn = (y >= targetCoord); }
                 else if (originalLightIdx == 3) { targetCoord = cy - 15; readyToTurn = (y <= targetCoord); }
             }
-            
+
             if (readyToTurn) {
                 // Chỉnh thẳng góc tọa độ trục cũ vào đúng quỹ đạo trục mới
                 if (originalLightIdx == 0 || originalLightIdx == 1) this.x = targetCoord;
@@ -227,8 +256,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         for (Vehicle other : allVehicles) {
             if (other.isPriorityVehicle && other != this) {
                 int otherLightIdx = getLightIdx(other.direction);
-                
-                // 1. Phân tích bỏ chạy (FLEE) nếu xe cấp cứu ở NGAY SAU LƯNG trong cùng làn 
+
+                // 1. Phân tích bỏ chạy (FLEE) nếu xe cấp cứu ở NGAY SAU LƯNG trong cùng làn
                 if (otherLightIdx == lightIdx) {
                     // Mở rộng threshold theo kích thước xe — xe lớn cần threshold rộng hơn
                     double fleeThreshold = Math.max(16, (this.height + other.height) / 2.0);
@@ -241,11 +270,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                         else if (lightIdx == 1) behindDist = other.x - this.x;
                         else if (lightIdx == 2) behindDist = this.y - other.y;
                         else if (lightIdx == 3) behindDist = other.y - this.y;
-                        
+
                         // Cứu thương đang sát đít (từ 0 đến 400px) -> Lách sang lề phải để nhường đường!
                         if (behindDist > 0 && behindDist < 400) {
                             isFleeing = true;
-                            
+
                             // Logic lách nhường đường (dạt ra lề phải của chiều đi)
                             double shiftSpeed = 40.0 * dt;
                             if (lightIdx == 0) {
@@ -271,7 +300,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         boolean isRightTurnOnRed = (turnIntention == 2 && !hasTurned);
         boolean mustStopByLight = false;
         if (!isPriorityVehicle && !isFleeing) {
-            if (myEffectiveLight == TrafficLight.State.RED || 
+            if (myEffectiveLight == TrafficLight.State.RED ||
                 (myEffectiveLight == TrafficLight.State.YELLOW && !passedStopLine)) {
                 mustStopByLight = true;
             }
@@ -302,10 +331,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         // BƯỚC 4: Rà phanh động (Dynamic Right of Way) - Thuật toán giao tuyến quang học
         for (Vehicle other : allVehicles) {
             if (other == this) continue;
-            
+
             int otherLightIdx = getLightIdx(other.direction);
             boolean sameAxis = (lightIdx < 2 && otherLightIdx < 2) || (lightIdx >= 2 && otherLightIdx >= 2);
-            
+
             // Chỉ xét 2 xe có quỹ đạo chéo góc (cross-traffic)
             if (!sameAxis) {
                 // Xác định tọa độ giao cắt của 2 quỹ đạo
@@ -336,7 +365,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
                 // 1. Phá băng giao thông: Ai ĐÃ qua rồi thì thoát ra khỏi vùng ảnh hưởng tuyệt đối!
                 if (myDistToIntersect < -CLEARANCE || otherDistToIntersect < -CLEARANCE) {
-                    continue; 
+                    continue;
                 }
 
                 // KHÔNG BAO GIỜ xung đột với xe xuất phát từ cùng một nhánh đường
@@ -357,7 +386,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 } else if (otherTarget instanceof vn.edu.hust.traffic.model.map.ThreeWayIntersection) {
                     otherLight = ((vn.edu.hust.traffic.model.map.ThreeWayIntersection)otherTarget).getLightForDirection(other.direction);
                 }
-                
+
                 if (otherLight != null) {
                     TrafficLight.State otherEffState = otherLight.getStateForTurn(other.turnIntention, other.hasTurned);
                     if (other.speed < 0.5 && otherEffState == TrafficLight.State.RED && otherDistToIntersect > 0) {
@@ -369,7 +398,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 boolean iMustYield = false;
                 boolean myPri = this.isPriorityVehicle || isFleeing;
                 boolean otherPri = other.isPriorityVehicle;
-                
+
                 // Trạng thái đè mặt ngã tư (Giải phóng ngã tư):
                 // LUẬT MỚI: Xe ĐÃ VÀO ngã tư (vượt qua vạch dừng) được ưu tiên TUYỆT ĐỐI để dọn đường
                 // Xe vừa có đèn xanh PHẢI CHỜ xe vừa dính đèn đỏ đi nốt qua ngã tư.
@@ -405,10 +434,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                         iMustYield = (this.id.compareTo(other.id) > 0);
                     }
                 }
-                
+
                 // Tuân lệnh giảm tốc
                 if (iMustYield) {
-                    // Tránh xe xa tít chân trời cũng phanh, chỉ phanh khi xe khẩn cấp đe doạ tiến vào 
+                    // Tránh xe xa tít chân trời cũng phanh, chỉ phanh khi xe khẩn cấp đe doạ tiến vào
                     if (otherDistToIntersect < 200) {
                         if (myDistToIntersect < 45) {
                             shouldStop = true; // Chạm chân đến ngã tư thì lết bánh hẳn
@@ -436,7 +465,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
             int otherLightIdx = getLightIdx(other.direction);
             boolean sameAxis = (lightIdx < 2 && otherLightIdx < 2) || (lightIdx >= 2 && otherLightIdx >= 2);
-            
+
             if (!sameAxis && !isLShapedFollow) continue;
 
             // sameLane threshold mở rộng theo kích thước xe — tránh miss khi xe lớn hoặc flee
@@ -447,7 +476,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                         ? Math.abs(other.y - this.y) < laneThreshold
                         : Math.abs(other.x - this.x) < laneThreshold;
             }
-            
+
             // Xử lý collision khi cả 2 xe cùng đang đi trên đường chéo
             if (this.isTurningDiagonally && other.isTurningDiagonally && this.originalLightIdx == other.originalLightIdx) {
                 sameAxis = true;
@@ -465,7 +494,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 double myDistToTurn = 0;
                 double otherDistFromTurn = 0;
                 double targetCoord = 0;
-                
+
                 if (turnIntention == 1) { // Left
                     if (originalLightIdx == 0) targetCoord = cx + 15;
                     else if (originalLightIdx == 1) targetCoord = cx - 15;
@@ -477,7 +506,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                     else if (originalLightIdx == 2) targetCoord = cy - 65;
                     else if (originalLightIdx == 3) targetCoord = cy + 65;
                 }
-                
+
                 // My distance TO turn point (chưa rẽ nên myDistToTurn phải > 0)
                 if (originalLightIdx == 0) myDistToTurn = targetCoord - (this.x + myHL);
                 else if (originalLightIdx == 1) myDistToTurn = (this.x - myHL) - targetCoord;
@@ -514,7 +543,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             }
 
             if (gap < safeDistance) {
-                double minGap = 8.0; 
+                double minGap = 8.0;
                 if (gap <= minGap) {
                     shouldStop = true;
                 } else {
@@ -537,10 +566,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 // Tăng bứt tốc ngã tư (Intersection Clear Burst)
                 if (inIntersection && isClear) {
                     // Không có chướng ngại vật -> Xe khẩn cấp rít ga phóng 1.5x tốc độ qua ngã tư
-                    this.speed = currentTargetSpeed * 1.5; 
+                    this.speed = currentTargetSpeed * 1.5;
                 } else if (inIntersection && !isClear) {
                     // Đang vướng xe phải nhường -> Chay chuẩn theo biểu đồ rà phanh
-                    this.speed = currentTargetSpeed; 
+                    this.speed = currentTargetSpeed;
                 } else {
                     // Trên đường thẳng ngoài ngã tư -> Duy trì tốc độ tuần tra 1.3x
                     this.speed = currentTargetSpeed * 1.3;
@@ -559,6 +588,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 }
             }
             movePhysically(dt);
+            finishDiagonalRightTurnIfNeeded(cx, cy);
         }
     }
 
@@ -585,4 +615,242 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     public double getWidth() { return width; }
     public double getHeight() { return height; }
     public boolean isPriorityVehicle() { return isPriorityVehicle; }
+
+    private void updateRoundabout(double dt, List<Vehicle> allVehicles, RoundaboutIntersection roundabout) {
+        double cx = roundabout.getX();
+        double cy = roundabout.getY();
+        double[] roadAngles = roundabout.getRoadAngles();
+        if (roadAngles.length == 0) {
+            movePhysically(dt);
+            return;
+        }
+
+        // 1. Initialize roundabout target exit and source index if not set
+        if (spawnSourceIndex == -1) {
+            spawnSourceIndex = getClosestRoadIndex(x, y, cx, cy, roadAngles);
+
+            // Calculate our offset from the road axis to know which lane we spawned in
+            double dx = x - cx;
+            double dy = y - cy;
+            double roadTheta = roadAngles[spawnSourceIndex];
+            double calculatedOffset = dx * Math.sin(roadTheta) - dy * Math.cos(roadTheta);
+            laneOffsetVal = Math.abs(calculatedOffset);
+            if (laneOffsetVal < 5) laneOffsetVal = 15.0; // default fallback
+
+            if (targetExitIndex < 0 || targetExitIndex >= roadAngles.length) {
+                java.util.Random rand = new java.util.Random();
+                int exitCount = roadAngles.length;
+                if (exitCount <= 1) {
+                    targetExitIndex = spawnSourceIndex;
+                } else {
+                    do {
+                        targetExitIndex = rand.nextInt(exitCount);
+                    } while (targetExitIndex == spawnSourceIndex);
+                }
+            }
+        }
+
+        double thetaSource = roadAngles[spawnSourceIndex];
+        double thetaTarget = roadAngles[targetExitIndex];
+
+        double safeDistance = (width > 30) ? 50 : 30;
+        double currentTargetSpeed = baseSpeed;
+        boolean shouldStop = false;
+
+        if (!insideRoundabout) {
+            // APPROACHING THE ROUNDABOUT (yielding at distance 180)
+            double dx = x - cx;
+            double dy = y - cy;
+            double d = dx * Math.cos(thetaSource) + dy * Math.sin(thetaSource);
+
+            double stopDist = d - 180;
+            passedStopLine = d <= 180;
+
+            // Yield to circulating vehicles approaching this entry from the left.
+            boolean yieldRequired = false;
+            for (Vehicle other : allVehicles) {
+                if (other != this && other.insideRoundabout) {
+                    double diff = normalizeAngle(thetaSource - other.roundaboutAngle);
+                    if (diff > 0 && diff < 0.6) {
+                        yieldRequired = true;
+                        break;
+                    }
+                }
+            }
+
+            if (yieldRequired && !passedStopLine) {
+                if (stopDist <= 0) {
+                    shouldStop = true;
+                } else if (stopDist < 80.0) {
+                    double ratio = stopDist / 80.0;
+                    currentTargetSpeed = baseSpeed * ratio;
+                    if (stopDist < 5) shouldStop = true;
+                }
+            }
+
+            if (d <= 180) {
+                insideRoundabout = true;
+                roundaboutAngle = thetaSource;
+            } else {
+                direction = thetaSource + Math.PI;
+                double targetX = cx + d * Math.cos(thetaSource) + laneOffsetVal * Math.sin(thetaSource);
+                double targetY = cy + d * Math.sin(thetaSource) - laneOffsetVal * Math.cos(thetaSource);
+                x = x + (targetX - x) * 0.15;
+                y = y + (targetY - y) * 0.15;
+            }
+        }
+
+        if (insideRoundabout) {
+            // INSIDE THE ROUNDABOUT (3 concentric lanes: Outer=165, Middle=140, Inner=115)
+            int exitsRemaining = getExitsRemaining(roundaboutAngle, thetaTarget, roadAngles);
+            double targetR = 165.0;
+            if (exitsRemaining > 2) {
+                targetR = 115.0; // Inner lane
+            } else if (exitsRemaining == 2) {
+                targetR = 140.0; // Middle lane
+            } else {
+                targetR = 165.0; // Outer lane
+            }
+
+            double currentR = Math.hypot(x - cx, y - cy);
+            double newR = currentR + (targetR - currentR) * 0.08;
+
+            double omega = speed / newR;
+            roundaboutAngle = normalizeAngle(roundaboutAngle + omega * dt);
+
+            x = cx + newR * Math.cos(roundaboutAngle);
+            y = cy + newR * Math.sin(roundaboutAngle);
+            direction = roundaboutAngle + Math.PI / 2.0;
+
+            // Collision avoidance inside roundabout
+            for (Vehicle other : allVehicles) {
+                if (other != this && other.insideRoundabout) {
+                    double angleDiff = normalizeAngle(other.roundaboutAngle - roundaboutAngle);
+                    if (angleDiff > 0 && angleDiff < 0.4) {
+                        double gap = newR * angleDiff;
+                        if (gap < safeDistance) {
+                            double minGap = 8.0;
+                            if (gap <= minGap) {
+                                shouldStop = true;
+                            } else {
+                                double ratio = (gap - minGap) / (safeDistance - minGap);
+                                currentTargetSpeed = Math.min(currentTargetSpeed, other.speed * ratio);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Exit condition
+            double exitDiff = normalizeAngle(roundaboutAngle - thetaTarget);
+            if (Math.abs(exitDiff) < 0.1) {
+                insideRoundabout = false;
+                hasTurned = true;
+                double exitD = 180;
+                x = cx + exitD * Math.cos(thetaTarget) - laneOffsetVal * Math.sin(thetaTarget);
+                y = cy + exitD * Math.sin(thetaTarget) + laneOffsetVal * Math.cos(thetaTarget);
+                direction = thetaTarget;
+            }
+        } else if (hasTurned) {
+            // EXITING THE ROUNDABOUT
+            double dx = x - cx;
+            double dy = y - cy;
+            double d = dx * Math.cos(thetaTarget) + dy * Math.sin(thetaTarget);
+
+            direction = thetaTarget;
+            double targetX = cx + (d + speed * dt) * Math.cos(thetaTarget) - laneOffsetVal * Math.sin(thetaTarget);
+            double targetY = cy + (d + speed * dt) * Math.sin(thetaTarget) + laneOffsetVal * Math.cos(thetaTarget);
+            x = targetX;
+            y = targetY;
+        }
+
+        if (shouldStop) {
+            speed = 0;
+        } else {
+            speed = speed + (currentTargetSpeed - speed) * 0.1;
+        }
+
+        if (!insideRoundabout && !hasTurned) {
+            movePhysically(dt);
+        }
+    }
+
+    private int getExitsRemaining(double currentAngle, double targetExitAngle, double[] roadAngles) {
+        double targetNorm = normalizeAngle(targetExitAngle);
+        double currentNorm = normalizeAngle(currentAngle);
+        double diff = normalizeAngle(targetNorm - currentNorm);
+        if (diff < 0) diff += 2 * Math.PI;
+
+        int count = 0;
+        for (double roadAngle : roadAngles) {
+            double d = normalizeAngle(roadAngle - currentNorm);
+            if (d < 0) d += 2 * Math.PI;
+            if (d <= diff) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int getClosestRoadIndex(double x, double y, double cx, double cy, double[] roadAngles) {
+        double dx = x - cx;
+        double dy = y - cy;
+        double currentAngle = Math.atan2(dy, dx);
+        int closestIdx = 0;
+        double minDist = Double.MAX_VALUE;
+        for (int i = 0; i < roadAngles.length; i++) {
+            double diff = Math.abs(normalizeAngle(currentAngle - roadAngles[i]));
+            if (diff < minDist) {
+                minDist = diff;
+                closestIdx = i;
+            }
+        }
+        return closestIdx;
+    }
+
+    private void finishDiagonalRightTurnIfNeeded(double cx, double cy) {
+        if (!isTurningDiagonally || hasTurned || turnIntention != 2) {
+            return;
+        }
+
+        double endLane = 65.0;
+        boolean endDiagonal = false;
+        if (originalLightIdx == 0) endDiagonal = (x >= cx - endLane);
+        else if (originalLightIdx == 1) endDiagonal = (x <= cx + endLane);
+        else if (originalLightIdx == 2) endDiagonal = (y >= cy - endLane);
+        else if (originalLightIdx == 3) endDiagonal = (y <= cy + endLane);
+
+        if (!endDiagonal) {
+            return;
+        }
+
+        isTurningDiagonally = false;
+        hasTurned = true;
+        if (originalLightIdx == 0) { x = cx - endLane; direction = Math.PI / 2; }
+        else if (originalLightIdx == 1) { x = cx + endLane; direction = -Math.PI / 2; }
+        else if (originalLightIdx == 2) { y = cy - endLane; direction = Math.PI; }
+        else if (originalLightIdx == 3) { y = cy + endLane; direction = 0; }
+    }
+
+    private boolean isNextExit(double currentAngle, double targetExitAngle, double[] roadAngles) {
+        double minCCWDiff = Double.MAX_VALUE;
+        int nextExitIdx = -1;
+        for (int i = 0; i < roadAngles.length; i++) {
+            double diff = normalizeAngle(roadAngles[i] - currentAngle);
+            if (diff > 0 && diff < minCCWDiff) {
+                minCCWDiff = diff;
+                nextExitIdx = i;
+            }
+        }
+        if (nextExitIdx != -1) {
+            return Math.abs(normalizeAngle(roadAngles[nextExitIdx] - targetExitAngle)) < 0.05;
+        }
+        return false;
+    }
+
+    private double normalizeAngle(double angle) {
+        while (angle <= -Math.PI) angle += 2 * Math.PI;
+        while (angle > Math.PI) angle -= 2 * Math.PI;
+        return angle;
+    }
 }

@@ -8,14 +8,14 @@ import java.util.List;
 
 /**
  * Điều khiển pha đèn cho Ngã 3 (T-junction).
- * 3 Đèn: [0]=LTR, [1]=RTL, [2]=BTT.
+ * 3 Đèn: [0]=LTR, [1]=RTL, [2]=TTB.
  * 
- * Phase 0: LTR Thẳng/Phải XANH, RTL Thẳng XANH
+ * Phase 0: LTR Thẳng XANH, RTL Thẳng/Phải XANH
  * Phase 1: LTR & RTL VÀNG
- * Phase 2: RTL Trái XANH (LTR Đỏ)
- * Phase 3: RTL Trái VÀNG
- * Phase 4: BTT Trái/Phải XANH
- * Phase 5: BTT VÀNG
+ * Phase 2: LTR Trái XANH (RTL Đỏ)
+ * Phase 3: LTR Trái VÀNG
+ * Phase 4: TTB Trái/Phải XANH
+ * Phase 5: TTB VÀNG
  */
 public class ThreeWayPhaseController {
     private static final double BASE_STRAIGHT = 10.0;
@@ -49,29 +49,28 @@ public class ThreeWayPhaseController {
 
         State ltrS = State.RED, ltrL = State.RED;
         State rtlS = State.RED, rtlL = State.RED;
-        State bttS = State.RED, bttL = State.RED;
+        State ttbS = State.RED, ttbL = State.RED;
         double duration = DUR_YELLOW;
 
         switch (currentPhase) {
-            case 0: // LTR Thẳng/Phải XANH, RTL Thẳng XANH
+            case 0: // LTR Thẳng XANH, RTL Thẳng/Phải XANH
                 ltrS = State.GREEN; rtlS = State.GREEN;
-                // Tại ngã 3 này LTR chỉ rẽ phải (auto), RTL rẽ trái
-                duration = BASE_STRAIGHT; // Giản lược, có thể dùng logic dynamic
+                duration = BASE_STRAIGHT; 
                 break;
             case 1:
                 ltrS = State.YELLOW; rtlS = State.YELLOW; duration = DUR_YELLOW;
                 break;
-            case 2: // RTL Trái XANH
-                rtlL = State.GREEN; duration = BASE_LEFT;
+            case 2: // LTR Trái XANH
+                ltrL = State.GREEN; duration = BASE_LEFT;
                 break;
             case 3:
-                rtlL = State.YELLOW; duration = DUR_YELLOW;
+                ltrL = State.YELLOW; duration = DUR_YELLOW;
                 break;
-            case 4: // BTT (Dưới lên) Trái/Phải XANH. Dùng đèn Straight cho đi sang phải, Left cho sang trái.
-                bttS = State.GREEN; bttL = State.GREEN; duration = BASE_LEFT;
+            case 4: // TTB (Trên xuống) Trái/Phải XANH
+                ttbS = State.GREEN; ttbL = State.GREEN; duration = BASE_LEFT;
                 break;
             case 5:
-                bttS = State.YELLOW; bttL = State.YELLOW; duration = DUR_YELLOW;
+                ttbS = State.YELLOW; ttbL = State.YELLOW; duration = DUR_YELLOW;
                 break;
         }
 
@@ -81,8 +80,8 @@ public class ThreeWayPhaseController {
         lights.get(0).forceLeftTurnState(ltrL, duration);
         lights.get(1).forceState(rtlS, duration);
         lights.get(1).forceLeftTurnState(rtlL, duration);
-        lights.get(2).forceState(bttS, duration);
-        lights.get(2).forceLeftTurnState(bttL, duration);
+        lights.get(2).forceState(ttbS, duration);
+        lights.get(2).forceLeftTurnState(ttbL, duration);
     }
 
     public int getCurrentPhase() { return currentPhase; }

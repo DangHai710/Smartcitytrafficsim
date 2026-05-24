@@ -67,10 +67,10 @@ public class Camera {
 
     public static double[] worldBounds(MapType mapType) {
         return switch (mapType) {
-            case CROSS_INTERSECTION -> new double[] { 0.0, 0.0, 800.0, 600.0 };
+            case CROSS_INTERSECTION -> new double[] { 0.0, -800.0, 800.0, 1500.0 };
             case T_INTERSECTION -> new double[] { 600.0, 0.0, 800.0, 600.0 };
-            case FIVE_WAY_INTERSECTION -> new double[] { -80.0, -80.0, 960.0, 760.0 };
-            case ROAD_NETWORK -> new double[] { 0.0, 0.0, 1400.0, 600.0 };
+            case FIVE_WAY_INTERSECTION -> new double[] { 100.0, -80.0, 1000.0, 760.0 };
+            case ROAD_NETWORK -> new double[] { 0.0, -800.0, 1400.0, 1500.0 };
         };
     }
 }

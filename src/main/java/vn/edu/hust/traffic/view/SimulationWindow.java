@@ -184,7 +184,8 @@ public class SimulationWindow extends Application {
         return switch (mapType) {
             case T_INTERSECTION -> SimulationMode.THREE_WAY_INTERSECTION;
             case CROSS_INTERSECTION -> SimulationMode.CROSS_INTERSECTION;
-            case FIVE_WAY_INTERSECTION, ROAD_NETWORK -> SimulationMode.ROAD_NETWORK;
+            case FIVE_WAY_INTERSECTION -> SimulationMode.FIVE_WAY_ROUNDABOUT;
+            case ROAD_NETWORK -> SimulationMode.ROAD_NETWORK;
         };
     }
 

@@ -2,7 +2,7 @@ package vn.edu.hust.traffic.view;
 
 public class SimulationViewSettings {
     private MapType mapType = MapType.ROAD_NETWORK;
-    private RenderMode renderMode = RenderMode.BASIC;
+    private RenderMode renderMode = RenderMode.GRAPHIC;
     private ControlMode controlMode = ControlMode.AUTO;
     private LightDisplayMode lightDisplayMode = LightDisplayMode.FULL_COUNTDOWN;
     private int trafficDensity = 2;

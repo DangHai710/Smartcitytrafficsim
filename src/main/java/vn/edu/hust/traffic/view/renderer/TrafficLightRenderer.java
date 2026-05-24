@@ -16,8 +16,14 @@ import vn.edu.hust.traffic.view.LightDisplayMode;
 import vn.edu.hust.traffic.view.MapType;
 import vn.edu.hust.traffic.view.SimulationViewSettings;
 import vn.edu.hust.traffic.view.camera.Camera;
+import vn.edu.hust.traffic.controller.TrafficController;
 
 public class TrafficLightRenderer {
+    private static final double CROSS_X = TrafficController.CROSS_X;
+    private static final double THREE_WAY_X = TrafficController.THREE_WAY_X;
+    private static final double TOP_CROSS_Y = TrafficController.TOP_CROSS_Y;
+    private static final double BOTTOM_CROSS_Y = TrafficController.BOTTOM_CROSS_Y;
+
     private record LightVisual(int index, double x, double y, double width, double height) {
     }
 
@@ -135,20 +141,27 @@ public class TrafficLightRenderer {
 
     private List<LightVisual> buildVisuals(MapType mapType, int lightCount) {
         List<LightVisual> visuals = new ArrayList<>();
-        double cy = 300.0;
+        double cy = BOTTOM_CROSS_Y;
 
-        if (mapType == MapType.T_INTERSECTION) {
+        if (mapType == MapType.CROSS_INTERSECTION && lightCount >= 8) {
+            addCrossVisuals(visuals, 0, CROSS_X, BOTTOM_CROSS_Y);
+            addCrossVisuals(visuals, 4, CROSS_X, TOP_CROSS_Y);
+        } else if (mapType == MapType.ROAD_NETWORK && lightCount >= 11) {
+            addCrossVisuals(visuals, 0, CROSS_X, BOTTOM_CROSS_Y);
+            addThreeWayVisuals(visuals, 4, THREE_WAY_X, BOTTOM_CROSS_Y);
+            addCrossVisuals(visuals, 7, CROSS_X, TOP_CROSS_Y);
+        } else if (mapType == MapType.T_INTERSECTION) {
             int baseIndex = lightCount >= 7 ? 4 : 0;
-            addThreeWayVisuals(visuals, baseIndex, 1000.0, cy);
+            addThreeWayVisuals(visuals, baseIndex, THREE_WAY_X, cy);
         } else if (mapType == MapType.ROAD_NETWORK && lightCount >= 7) {
-            addCrossVisuals(visuals, 0, 400.0, cy);
-            addThreeWayVisuals(visuals, 4, 1000.0, cy);
+            addCrossVisuals(visuals, 0, CROSS_X, cy);
+            addThreeWayVisuals(visuals, 4, THREE_WAY_X, cy);
         } else {
-            addCrossVisuals(visuals, 0, 400.0, cy);
+            addCrossVisuals(visuals, 0, CROSS_X, cy);
         }
 
         if (mapType == MapType.FIVE_WAY_INTERSECTION && lightCount > 4) {
-            visuals.add(new LightVisual(4, 400.0 + 175, cy - 135, 30, 90));
+            visuals.add(new LightVisual(4, CROSS_X + 175, cy - 135, 30, 90));
         }
 
         return visuals.stream().filter(visual -> visual.index() < lightCount).toList();
@@ -164,7 +177,7 @@ public class TrafficLightRenderer {
     private void addThreeWayVisuals(List<LightVisual> visuals, int baseIndex, double cx, double cy) {
         visuals.add(new LightVisual(baseIndex, cx - 136, cy + 82, 30, 90));
         visuals.add(new LightVisual(baseIndex + 1, cx + 94, cy - 148, 30, 90));
-        visuals.add(new LightVisual(baseIndex + 2, cx + 94, cy + 82, 30, 90));
+        visuals.add(new LightVisual(baseIndex + 2, cx - 136, cy - 148, 30, 90));
     }
 
     private String stateName(TrafficLight light, String methodName) {

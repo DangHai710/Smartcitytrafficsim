@@ -21,8 +21,10 @@ public class TrafficController {
     private static final int HEIGHT = 600;
     private static final int THREE_WAY_WORLD_MIN_X = 600;
 
-    private static final double CROSS_X = 400.0;
-    private static final double THREE_WAY_X = 1000.0;
+    public static final double CROSS_X = 400.0;
+    public static final double THREE_WAY_X = 1200.0;
+    public static final double TOP_CROSS_Y = -500.0;
+    public static final double BOTTOM_CROSS_Y = 300.0;
 
     private static final double LANE_PRIORITY = 15;
     private static final double LANE_CAR = 40;
@@ -39,10 +41,12 @@ public class TrafficController {
     private List<Intersection> intersections;
     private List<TrafficLight> lights1;
     private List<TrafficLight> lights2;
+    private List<TrafficLight> lights3;
     private List<Vehicle> vehicles;
 
     private IntersectionPhaseController phaseController1;
     private ThreeWayPhaseController phaseController2;
+    private IntersectionPhaseController phaseController3;
     private boolean autoSpawnEnabled = true;
 
     public TrafficController() {
@@ -60,16 +64,24 @@ public class TrafficController {
         intersections = new ArrayList<>();
         lights1 = new ArrayList<>();
         lights2 = new ArrayList<>();
+        lights3 = new ArrayList<>();
         vehicles = new ArrayList<>();
         phaseController1 = null;
         phaseController2 = null;
+        phaseController3 = null;
 
         if (mode == SimulationMode.CROSS_INTERSECTION || mode == SimulationMode.ROAD_NETWORK) {
             for (int i = 0; i < 4; i++) {
                 lights1.add(new TrafficLight());
             }
             phaseController1 = new IntersectionPhaseController(lights1);
-            intersections.add(new CrossIntersection("cross1", CROSS_X, HEIGHT / 2.0, lights1));
+            intersections.add(new CrossIntersection("cross1", CROSS_X, BOTTOM_CROSS_Y, lights1));
+
+            for (int i = 0; i < 4; i++) {
+                lights3.add(new TrafficLight());
+            }
+            phaseController3 = new IntersectionPhaseController(lights3);
+            intersections.add(new CrossIntersection("cross2", CROSS_X, TOP_CROSS_Y, lights3));
         }
 
         if (mode == SimulationMode.THREE_WAY_INTERSECTION || mode == SimulationMode.ROAD_NETWORK) {
@@ -77,7 +89,23 @@ public class TrafficController {
                 lights2.add(new TrafficLight());
             }
             phaseController2 = new ThreeWayPhaseController(lights2);
-            intersections.add(new ThreeWayIntersection("three1", THREE_WAY_X, HEIGHT / 2.0, lights2));
+            double threeWayY = BOTTOM_CROSS_Y;
+            intersections.add(new ThreeWayIntersection("three1", THREE_WAY_X, threeWayY, lights2));
+        }
+
+        if (mode == SimulationMode.ROAD_NETWORK) {
+            double[] roadNetworkAngles = new double[] {
+                0,              // 0: Đông (toward three1)
+                -Math.PI / 2,   // 1: Bắc (from top vertical road)
+                Math.PI,        // 2: Tây (from cross2)
+                Math.PI / 2,    // 3: Nam (toward bottom)
+                -Math.PI / 4    // 4: Dong Bac
+            };
+            intersections.add(new vn.edu.hust.traffic.model.map.RoundaboutIntersection("roundabout1", THREE_WAY_X, TOP_CROSS_Y, 100.0, roadNetworkAngles));
+        }
+
+        if (mode == SimulationMode.FIVE_WAY_ROUNDABOUT) {
+            intersections.add(new vn.edu.hust.traffic.model.map.RoundaboutIntersection("roundabout1", 600.0, BOTTOM_CROSS_Y, 100.0));
         }
     }
 
@@ -87,6 +115,9 @@ public class TrafficController {
         }
         if (phaseController2 != null) {
             phaseController2.update(dt, vehicles);
+        }
+        if (phaseController3 != null) {
+            phaseController3.update(dt, vehicles);
         }
 
         if (autoSpawnEnabled) {
@@ -104,7 +135,7 @@ public class TrafficController {
         }
 
         vehicles.removeIf(v -> v.getX() < worldMinX - 200 || v.getX() > worldMaxX + 200
-                || v.getY() < -200 || v.getY() > HEIGHT + 200);
+                || v.getY() < TOP_CROSS_Y - 400 || v.getY() > HEIGHT + 400);
 
         for (Intersection inter : intersections) {
             inter.update();
@@ -143,39 +174,66 @@ public class TrafficController {
 
     private SpawnPoint createSpawnPoint(int sourceIdx) {
         int turnIntention = randomTurnIntention(sourceIdx);
+        turnIntention = normalizeTurnIntentionForSource(sourceIdx, turnIntention);
         double offset = laneOffset(turnIntention);
         double x;
         double y;
         double direction;
 
+        if (mode == SimulationMode.FIVE_WAY_ROUNDABOUT) {
+            double cx = 600.0;
+            double cy = 300.0;
+            double d = 550.0;
+            double theta = 0;
+            switch (sourceIdx) {
+                case 0: theta = 0; break;
+                case 1: theta = -Math.PI / 2.0; break;
+                case 2: theta = Math.PI; break;
+                case 3: theta = Math.PI / 2.0; break;
+                case 4: theta = -Math.PI / 4.0; break;
+            }
+            x = cx + d * Math.cos(theta) + offset * Math.sin(theta);
+            y = cy + d * Math.sin(theta) - offset * Math.cos(theta);
+            direction = theta + Math.PI;
+            return new SpawnPoint(x, y, direction, turnIntention);
+        }
+
         switch (sourceIdx) {
             case 0:
                 x = worldMinX - 50;
-                y = HEIGHT / 2.0 + offset;
+                y = (mode == SimulationMode.CROSS_INTERSECTION || mode == SimulationMode.ROAD_NETWORK ? (random.nextBoolean() ? TOP_CROSS_Y : BOTTOM_CROSS_Y) : (HEIGHT / 2.0)) + offset;
                 direction = 0;
                 break;
             case 1:
-                x = worldMaxX + 50;
-                y = HEIGHT / 2.0 - offset;
+                double spawnY = (mode == SimulationMode.CROSS_INTERSECTION || mode == SimulationMode.ROAD_NETWORK) ? (random.nextBoolean() ? TOP_CROSS_Y : BOTTOM_CROSS_Y) : (HEIGHT / 2.0);
+                if (spawnY == TOP_CROSS_Y) {
+                    x = worldMaxX + 50.0;
+                } else {
+                    x = worldMaxX + 50.0;
+                }
+                y = spawnY - offset;
                 direction = Math.PI;
                 break;
             case 2:
                 x = CROSS_X - offset;
-                y = -50;
+                y = TOP_CROSS_Y - 250;
                 direction = Math.PI / 2;
                 break;
             case 3:
                 x = CROSS_X + offset;
-                y = HEIGHT + 50;
+                y = 650;
                 direction = -Math.PI / 2;
                 break;
             case 4:
-                x = THREE_WAY_X + offset;
-                y = HEIGHT + 50;
-                direction = -Math.PI / 2;
-                if (turnIntention == 0) {
-                    turnIntention = random.nextBoolean() ? 1 : 2;
+                double northSpawnY;
+                if (mode == SimulationMode.ROAD_NETWORK) {
+                    northSpawnY = TOP_CROSS_Y - 500;
+                } else {
+                    northSpawnY = -610;
                 }
+                x = THREE_WAY_X - offset;
+                y = northSpawnY;
+                direction = Math.PI / 2;
                 break;
             default:
                 return null;
@@ -192,12 +250,21 @@ public class TrafficController {
             turnIntention = 2;
         }
 
-        if (mode == SimulationMode.THREE_WAY_INTERSECTION || sourceIdx == 4) {
-            if (sourceIdx == 0 && turnIntention == 1) {
-                turnIntention = random.nextBoolean() ? 0 : 2;
-            } else if (sourceIdx == 1 && turnIntention == 2) {
-                turnIntention = random.nextBoolean() ? 0 : 1;
+        return turnIntention;
+    }
+
+    private int normalizeTurnIntentionForSource(int sourceIdx, int turnIntention) {
+        if (mode == SimulationMode.THREE_WAY_INTERSECTION) {
+            if (sourceIdx == 0 && turnIntention == 2) {
+                return random.nextBoolean() ? 0 : 1;
             }
+            if (sourceIdx == 1 && turnIntention == 1) {
+                return random.nextBoolean() ? 0 : 2;
+            }
+        }
+
+        if (sourceIdx == 4 && turnIntention == 0) {
+            return random.nextBoolean() ? 1 : 2;
         }
         return turnIntention;
     }
@@ -245,7 +312,7 @@ public class TrafficController {
         return switch (mode) {
             case CROSS_INTERSECTION -> new int[] { 0, 1, 2, 3 };
             case THREE_WAY_INTERSECTION -> new int[] { 0, 1, 4 };
-            case ROAD_NETWORK -> new int[] { 0, 1, 2, 3, 4 };
+            case ROAD_NETWORK, FIVE_WAY_ROUNDABOUT -> new int[] { 0, 1, 2, 3, 4 };
         };
     }
 
@@ -273,6 +340,14 @@ public class TrafficController {
         return intersections;
     }
 
+    public List<TrafficLight> getLights() {
+        List<TrafficLight> all = new ArrayList<>();
+        if (lights1 != null) all.addAll(lights1);
+        if (lights2 != null) all.addAll(lights2);
+        if (lights3 != null) all.addAll(lights3);
+        return all;
+    }
+
     public List<TrafficLight> getLights1() {
         return lights1;
     }
@@ -281,12 +356,20 @@ public class TrafficController {
         return lights2;
     }
 
+    public List<TrafficLight> getLights3() {
+        return lights3;
+    }
+
     public IntersectionPhaseController getPhaseController1() {
         return phaseController1;
     }
 
     public ThreeWayPhaseController getPhaseController2() {
         return phaseController2;
+    }
+
+    public IntersectionPhaseController getPhaseController3() {
+        return phaseController3;
     }
 
     private record SpawnPoint(double x, double y, double direction, int turnIntention) {
