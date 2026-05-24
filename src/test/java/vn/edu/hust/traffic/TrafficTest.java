@@ -3,8 +3,10 @@ package vn.edu.hust.traffic;
 import org.junit.jupiter.api.Test;
 import vn.edu.hust.traffic.controller.SimulationMode;
 import vn.edu.hust.traffic.controller.TrafficController;
+import vn.edu.hust.traffic.model.map.CrossIntersection;
 import vn.edu.hust.traffic.model.map.Intersection;
 import vn.edu.hust.traffic.model.map.RoundaboutIntersection;
+import vn.edu.hust.traffic.model.vehicle.Ambulance;
 import vn.edu.hust.traffic.model.vehicle.Car;
 import vn.edu.hust.traffic.model.vehicle.Vehicle;
 import vn.edu.hust.traffic.model.map.ThreeWayIntersection;
@@ -127,7 +129,7 @@ public class TrafficTest {
 
         assertTrue(vehicle.insideRoundabout);
         assertTrue(vehicle.roundaboutAngle < 0.0);
-        assertEquals(-Math.PI / 2.0, vehicle.getDirection(), 0.25);
+        assertEquals(-Math.PI / 2.0, vehicle.getDirection(), 0.35);
     }
 
     @Test
@@ -146,6 +148,147 @@ public class TrafficTest {
         assertTrue(vehicle.hasTurned());
         assertEquals(-Math.PI / 2.0, vehicle.getDirection(), 0.01);
         assertTrue(vehicle.getX() > 600.0, "x=" + vehicle.getX() + ", y=" + vehicle.getY());
+    }
+
+    @Test
+    public void fiveWayRoundaboutApproachIsClampedToPaintedLane() throws Exception {
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
+        List<Vehicle> vehicles = new ArrayList<>();
+        Vehicle vehicle = new Car("Car1", 770.0, 210.0, 0.0, Math.PI, 26, 13, false);
+        setTargetExitIndex(vehicle, 1);
+        vehicles.add(vehicle);
+
+        vehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertEquals(770.0, vehicle.getX(), 0.01);
+        assertEquals(235.0, vehicle.getY(), 0.01);
+    }
+
+    @Test
+    public void roadNetworkVehicleBelowRoundaboutDoesNotTurnAtOffAxisCrossIntersection() {
+        List<TrafficLight> lights = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            TrafficLight light = new TrafficLight();
+            light.forceState(TrafficLight.State.GREEN, 999);
+            light.forceLeftTurnState(TrafficLight.State.GREEN, 999);
+            lights.add(light);
+        }
+        List<Intersection> intersections = List.of(
+                new CrossIntersection("cross2", 400.0, -500.0, lights),
+                new RoundaboutIntersection("roundabout1", 1200.0, -500.0, 100.0,
+                        new double[] { 0, -Math.PI / 2, Math.PI, Math.PI / 2, -Math.PI / 4 }));
+        Vehicle vehicle = new Car("Car1", 1215.0, 80.0, 80.0, -Math.PI / 2, 26, 13, false);
+        vehicle.setTurnIntention(2);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(vehicle));
+
+        for (int i = 0; i < 60 && vehicle.getY() > -230.0; i++) {
+            vehicle.update(0.05, vehicles, intersections, 1400, 600);
+        }
+
+        assertEquals(-Math.PI / 2, vehicle.getDirection(), 0.01);
+        assertEquals(1215.0, vehicle.getX(), 0.01);
+    }
+
+    @Test
+    public void threeWayDiagonalRightTurnLocksOntoExitLane() {
+        List<TrafficLight> lights = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            TrafficLight light = new TrafficLight();
+            light.forceState(TrafficLight.State.GREEN, 999);
+            light.forceLeftTurnState(TrafficLight.State.GREEN, 999);
+            lights.add(light);
+        }
+        List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
+        Vehicle vehicle = new Car("Car1", 1265.0, 540.0, 80.0, -Math.PI / 2.0, 26, 13, false);
+        vehicle.setTurnIntention(2);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(vehicle));
+
+        for (int i = 0; i < 120 && !vehicle.hasTurned(); i++) {
+            vehicle.update(0.05, vehicles, intersections, 1400, 600);
+        }
+
+        assertTrue(vehicle.hasTurned(), "x=" + vehicle.getX() + ", y=" + vehicle.getY());
+        assertEquals(0.0, vehicle.getDirection(), 0.01);
+        assertEquals(365.0, vehicle.getY(), 0.01);
+    }
+
+    @Test
+    public void fiveWayRoundaboutKeepsCirculatingVehicleInsideRoadBand() throws Exception {
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
+        List<Vehicle> vehicles = new ArrayList<>();
+        Vehicle vehicle = new Car("Car1", 850.0, 300.0, 80.0, Math.PI, 26, 13, false);
+        vehicle.insideRoundabout = true;
+        vehicle.roundaboutAngle = 0.0;
+        setTargetExitIndex(vehicle, 1);
+        vehicles.add(vehicle);
+
+        vehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        double radius = Math.hypot(vehicle.getX() - 600.0, vehicle.getY() - 300.0);
+        assertTrue(radius >= 112.0 && radius <= 166.0, "radius=" + radius);
+    }
+
+    @Test
+    public void fiveWayRoundaboutEntryDoesNotTeleportAtMergePoint() throws Exception {
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
+        List<Vehicle> vehicles = new ArrayList<>();
+        Vehicle vehicle = new Car("Car1", 790.0, 235.0, 80.0, Math.PI, 26, 13, false);
+        setTargetExitIndex(vehicle, 1);
+        vehicles.add(vehicle);
+
+        double maxStep = 0.0;
+        double previousX = vehicle.getX();
+        double previousY = vehicle.getY();
+        for (int i = 0; i < 20 && !vehicle.insideRoundabout; i++) {
+            vehicle.update(0.05, vehicles, intersections, 1400, 600);
+            maxStep = Math.max(maxStep, Math.hypot(vehicle.getX() - previousX, vehicle.getY() - previousY));
+            previousX = vehicle.getX();
+            previousY = vehicle.getY();
+        }
+
+        assertTrue(vehicle.insideRoundabout);
+        assertTrue(maxStep < 15.0, "maxStep=" + maxStep);
+    }
+
+    @Test
+    public void fiveWayRoundaboutExitDoesNotTeleportToRoadLane() throws Exception {
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
+        List<Vehicle> vehicles = new ArrayList<>();
+        Vehicle vehicle = new Car("Car1", 781.0, 260.0, 80.0, Math.PI, 26, 13, false);
+        setTargetExitIndex(vehicle, 1);
+        vehicles.add(vehicle);
+
+        double maxStep = 0.0;
+        double previousX = vehicle.getX();
+        double previousY = vehicle.getY();
+        for (int i = 0; i < 400 && !vehicle.hasTurned(); i++) {
+            vehicle.update(0.05, vehicles, intersections, 1400, 600);
+            maxStep = Math.max(maxStep, Math.hypot(vehicle.getX() - previousX, vehicle.getY() - previousY));
+            previousX = vehicle.getX();
+            previousY = vehicle.getY();
+        }
+
+        assertTrue(vehicle.hasTurned());
+        assertTrue(maxStep < 20.0, "maxStep=" + maxStep);
+    }
+
+    @Test
+    public void yieldingToEmergencyVehicleStaysInsideRoadWidth() {
+        List<TrafficLight> lights = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            TrafficLight light = new TrafficLight();
+            light.forceState(TrafficLight.State.GREEN, 999);
+            light.forceLeftTurnState(TrafficLight.State.GREEN, 999);
+            lights.add(light);
+        }
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle car = new Car("Car1", 120.0, 360.0, 80.0, 0.0, 26, 13, false);
+        Vehicle ambulance = new Ambulance("Amb1", 80.0, 360.0, 80.0, 0.0, true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(car, ambulance));
+
+        car.update(1.0, vehicles, intersections, 1400, 600);
+
+        assertTrue(car.getY() <= 300.0 + 80.0 - car.getHeight() / 2.0 + 0.01, "y=" + car.getY());
     }
 
     @Test

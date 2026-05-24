@@ -9,6 +9,13 @@ import java.util.List;
  * Lớp cha cho mọi loại phương tiện giao thông.
  */
 public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn.edu.hust.traffic.base.Updatable {
+    private static final double ROAD_HALF_WIDTH = 80.0;
+    private static final double ROUNDABOUT_ENTRY_RADIUS = 180.0;
+    private static final double ROUNDABOUT_CAPTURE_DISTANCE = 260.0;
+    private static final double ROUNDABOUT_MIN_DRIVE_RADIUS = 112.0;
+    private static final double ROUNDABOUT_MAX_DRIVE_RADIUS = 166.0;
+    private static final double[] ROUNDABOUT_LANE_OFFSETS = { 15.0, 40.0, 65.0 };
+
     protected String id;
     protected double x, y, speed, direction, width, height;
     protected boolean isPriorityVehicle;
@@ -65,8 +72,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
         for (Intersection inter : intersections) {
             if (inter instanceof RoundaboutIntersection) {
-                double dist = Math.hypot(x - inter.getX(), y - inter.getY());
-                if (dist < 550 && !exitedRoundabout) {
+                RoundaboutIntersection roundabout = (RoundaboutIntersection) inter;
+                if (!exitedRoundabout && isOnRoundaboutApproach(roundabout)) {
                     return inter;
                 }
                 continue;
@@ -77,6 +84,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             double stopY_BTT = inter.getY() + 120;
 
             int lightIdx = isTurningDiagonally ? originalLightIdx : getLightIdx(direction);
+            if (!isTurningDiagonally && !isAlignedWithIntersectionRoad(inter, lightIdx)) {
+                continue;
+            }
+
             double dist = Double.MAX_VALUE;
 
             switch (lightIdx) {
@@ -104,6 +115,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         final double SLOW_ZONE = 80.0;
         boolean shouldStop = false;
         double currentTargetSpeed = baseSpeed;
+
+        if (continueDiagonalRightTurn(dt)) {
+            return;
+        }
 
         Intersection targetInter = getTargetIntersection(intersections);
         if (targetInter == null) {
@@ -278,14 +293,15 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
                             // Logic lách nhường đường (dạt ra lề phải của chiều đi)
                             double shiftSpeed = 40.0 * dt;
+                            double edgeLimit = roadCenterOffsetLimit();
                             if (lightIdx == 0) {
-                                if (this.y < cy + 85) this.y += shiftSpeed;
+                                this.y = Math.min(cy + edgeLimit, this.y + shiftSpeed);
                             } else if (lightIdx == 1) {
-                                if (this.y > cy - 85) this.y -= shiftSpeed;
+                                this.y = Math.max(cy - edgeLimit, this.y - shiftSpeed);
                             } else if (lightIdx == 2) {
-                                if (this.x > cx - 85) this.x -= shiftSpeed;
+                                this.x = Math.max(cx - edgeLimit, this.x - shiftSpeed);
                             } else if (lightIdx == 3) {
-                                if (this.x < cx + 85) this.x += shiftSpeed;
+                                this.x = Math.min(cx + edgeLimit, this.x + shiftSpeed);
                             }
                         }
                     }
@@ -628,15 +644,14 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
         // 1. Initialize roundabout target exit and source index if not set
         if (spawnSourceIndex == -1) {
-            spawnSourceIndex = getClosestRoadIndex(x, y, cx, cy, roadAngles);
+            spawnSourceIndex = getApproachRoadIndex(x, y, direction, cx, cy, roadAngles);
 
             // Calculate our offset from the road axis to know which lane we spawned in
             double dx = x - cx;
             double dy = y - cy;
             double roadTheta = roadAngles[spawnSourceIndex];
             double calculatedOffset = dx * Math.sin(roadTheta) - dy * Math.cos(roadTheta);
-            laneOffsetVal = Math.abs(calculatedOffset);
-            if (laneOffsetVal < 5) laneOffsetVal = 15.0; // default fallback
+            laneOffsetVal = normalizeRoundaboutLaneOffset(Math.abs(calculatedOffset));
 
             if (targetExitIndex < 0 || targetExitIndex >= roadAngles.length) {
                 java.util.Random rand = new java.util.Random();
@@ -653,6 +668,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
         double thetaSource = roadAngles[spawnSourceIndex];
         double thetaTarget = roadAngles[targetExitIndex];
+        double entryMergeDistance = roundaboutLaneMergeDistance();
+        double targetExitAngle = getRoundaboutExitLaneAngle(thetaTarget);
 
         double safeDistance = (width > 30) ? 50 : 30;
         double currentTargetSpeed = baseSpeed;
@@ -664,8 +681,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             double dy = y - cy;
             double d = dx * Math.cos(thetaSource) + dy * Math.sin(thetaSource);
 
-            double stopDist = d - 180;
-            passedStopLine = d <= 180;
+            double stopDist = d - ROUNDABOUT_ENTRY_RADIUS;
+            passedStopLine = d <= ROUNDABOUT_ENTRY_RADIUS;
 
             // Yield to circulating vehicles that will reach this entry while moving counter-clockwise.
             boolean yieldRequired = false;
@@ -689,15 +706,15 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 }
             }
 
-            if (d <= 180) {
+            if (d <= entryMergeDistance) {
+                placeOnRoundaboutEntryLane(cx, cy, thetaSource, Math.max(0.0, d));
                 insideRoundabout = true;
-                roundaboutAngle = thetaSource;
+                roundaboutAngle = Math.atan2(y - cy, x - cx);
             } else {
                 direction = thetaSource + Math.PI;
-                double targetX = cx + d * Math.cos(thetaSource) + laneOffsetVal * Math.sin(thetaSource);
-                double targetY = cy + d * Math.sin(thetaSource) - laneOffsetVal * Math.cos(thetaSource);
-                x = x + (targetX - x) * 0.15;
-                y = y + (targetY - y) * 0.15;
+                if (d <= ROUNDABOUT_ENTRY_RADIUS) {
+                    placeOnRoundaboutEntryLane(cx, cy, thetaSource, d);
+                }
             }
         }
 
@@ -713,8 +730,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 targetR = 165.0; // Outer lane
             }
 
-            double currentR = Math.hypot(x - cx, y - cy);
-            double newR = currentR + (targetR - currentR) * 0.08;
+            double currentR = clampRoundaboutRadius(Math.hypot(x - cx, y - cy));
+            double newR = clampRoundaboutRadius(currentR + (targetR - currentR) * 0.08);
 
             double previousAngle = roundaboutAngle;
             double omega = speed / newR;
@@ -744,14 +761,12 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             }
 
             // Exit condition
-            if (hasReachedCounterClockwiseExit(previousAngle, roundaboutAngle, thetaTarget)) {
+            if (hasReachedCounterClockwiseExit(previousAngle, roundaboutAngle, targetExitAngle)) {
                 insideRoundabout = false;
                 exitedRoundabout = true;
                 hasTurned = true;
-                double exitD = 180;
                 roundaboutAngle = thetaTarget;
-                x = cx + exitD * Math.cos(thetaTarget) - laneOffsetVal * Math.sin(thetaTarget);
-                y = cy + exitD * Math.sin(thetaTarget) + laneOffsetVal * Math.cos(thetaTarget);
+                placeOnRoundaboutExitLane(cx, cy, thetaTarget, entryMergeDistance);
                 direction = thetaTarget;
             }
         } else if (exitedRoundabout) {
@@ -761,10 +776,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             double d = dx * Math.cos(thetaTarget) + dy * Math.sin(thetaTarget);
 
             direction = thetaTarget;
-            double targetX = cx + (d + speed * dt) * Math.cos(thetaTarget) - laneOffsetVal * Math.sin(thetaTarget);
-            double targetY = cy + (d + speed * dt) * Math.sin(thetaTarget) + laneOffsetVal * Math.cos(thetaTarget);
-            x = targetX;
-            y = targetY;
+            placeOnRoundaboutExitLane(cx, cy, thetaTarget, d + speed * dt);
         }
 
         if (shouldStop) {
@@ -775,7 +787,90 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
         if (!insideRoundabout && !exitedRoundabout) {
             movePhysically(dt);
+            double dx = x - cx;
+            double dy = y - cy;
+            double d = dx * Math.cos(thetaSource) + dy * Math.sin(thetaSource);
+            if (d <= ROUNDABOUT_ENTRY_RADIUS) {
+                placeOnRoundaboutEntryLane(cx, cy, thetaSource, Math.max(0.0, d));
+            }
         }
+    }
+
+    private void placeOnRoundaboutEntryLane(double cx, double cy, double theta, double distanceFromCenter) {
+        x = cx + distanceFromCenter * Math.cos(theta) + laneOffsetVal * Math.sin(theta);
+        y = cy + distanceFromCenter * Math.sin(theta) - laneOffsetVal * Math.cos(theta);
+    }
+
+    private void placeOnRoundaboutExitLane(double cx, double cy, double theta, double distanceFromCenter) {
+        x = cx + distanceFromCenter * Math.cos(theta) - laneOffsetVal * Math.sin(theta);
+        y = cy + distanceFromCenter * Math.sin(theta) + laneOffsetVal * Math.cos(theta);
+    }
+
+    private double normalizeRoundaboutLaneOffset(double offset) {
+        double closest = ROUNDABOUT_LANE_OFFSETS[0];
+        double minDistance = Math.abs(offset - closest);
+        for (double laneOffset : ROUNDABOUT_LANE_OFFSETS) {
+            double distance = Math.abs(offset - laneOffset);
+            if (distance < minDistance) {
+                closest = laneOffset;
+                minDistance = distance;
+            }
+        }
+        return closest;
+    }
+
+    private double clampRoundaboutRadius(double radius) {
+        return Math.max(ROUNDABOUT_MIN_DRIVE_RADIUS, Math.min(ROUNDABOUT_MAX_DRIVE_RADIUS, radius));
+    }
+
+    private double roadCenterOffsetLimit() {
+        return Math.max(0.0, ROAD_HALF_WIDTH - height / 2.0);
+    }
+
+    private boolean isAlignedWithIntersectionRoad(Intersection inter, int lightIdx) {
+        double lateralLimit = ROAD_HALF_WIDTH + width / 2.0;
+        if (lightIdx < 2) {
+            return Math.abs(y - inter.getY()) <= lateralLimit;
+        }
+        return Math.abs(x - inter.getX()) <= lateralLimit;
+    }
+
+    private boolean isOnRoundaboutApproach(RoundaboutIntersection roundabout) {
+        if (insideRoundabout) {
+            return true;
+        }
+
+        double[] roadAngles = roundabout.getRoadAngles();
+        if (roadAngles.length == 0) {
+            return false;
+        }
+
+        double cx = roundabout.getX();
+        double cy = roundabout.getY();
+        int roadIndex = getApproachRoadIndex(x, y, direction, cx, cy, roadAngles);
+        double theta = roadAngles[roadIndex];
+        double dx = x - cx;
+        double dy = y - cy;
+        double forwardDistance = dx * Math.cos(theta) + dy * Math.sin(theta);
+        double lateralDistance = Math.abs(dx * Math.sin(theta) - dy * Math.cos(theta));
+        double headingDiff = Math.abs(normalizeAngle(direction - (theta + Math.PI)));
+
+        return forwardDistance > 0
+                && forwardDistance < ROUNDABOUT_CAPTURE_DISTANCE
+                && lateralDistance <= ROAD_HALF_WIDTH + width / 2.0
+                && headingDiff < 0.65;
+    }
+
+    private double roundaboutLaneMergeDistance() {
+        double r = ROUNDABOUT_MAX_DRIVE_RADIUS;
+        return Math.sqrt(Math.max(0.0, r * r - laneOffsetVal * laneOffsetVal));
+    }
+
+    private double getRoundaboutExitLaneAngle(double theta) {
+        double d = roundaboutLaneMergeDistance();
+        double localX = d * Math.cos(theta) - laneOffsetVal * Math.sin(theta);
+        double localY = d * Math.sin(theta) + laneOffsetVal * Math.cos(theta);
+        return Math.atan2(localY, localX);
     }
 
     private int getExitsRemaining(double currentAngle, double targetExitAngle, double[] roadAngles) {
@@ -809,6 +904,25 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         return closestIdx;
     }
 
+    private int getApproachRoadIndex(double x, double y, double direction, double cx, double cy, double[] roadAngles) {
+        int bestHeadingIdx = 0;
+        double bestHeadingDiff = Double.MAX_VALUE;
+        for (int i = 0; i < roadAngles.length; i++) {
+            double incomingDirection = normalizeAngle(roadAngles[i] + Math.PI);
+            double diff = Math.abs(normalizeAngle(direction - incomingDirection));
+            if (diff < bestHeadingDiff) {
+                bestHeadingDiff = diff;
+                bestHeadingIdx = i;
+            }
+        }
+
+        if (bestHeadingDiff < 0.65) {
+            return bestHeadingIdx;
+        }
+
+        return getClosestRoadIndex(x, y, cx, cy, roadAngles);
+    }
+
     private void finishDiagonalRightTurnIfNeeded(double cx, double cy) {
         if (!isTurningDiagonally || hasTurned || turnIntention != 2) {
             return;
@@ -831,6 +945,17 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         else if (originalLightIdx == 1) { x = cx + endLane; direction = -Math.PI / 2; }
         else if (originalLightIdx == 2) { y = cy - endLane; direction = Math.PI; }
         else if (originalLightIdx == 3) { y = cy + endLane; direction = 0; }
+    }
+
+    private boolean continueDiagonalRightTurn(double dt) {
+        if (!isTurningDiagonally) {
+            return false;
+        }
+
+        speed = baseSpeed;
+        movePhysically(dt);
+        finishDiagonalRightTurnIfNeeded(diagonalTurnCenterX, diagonalTurnCenterY);
+        return true;
     }
 
     private boolean isNextExit(double currentAngle, double targetExitAngle, double[] roadAngles) {
