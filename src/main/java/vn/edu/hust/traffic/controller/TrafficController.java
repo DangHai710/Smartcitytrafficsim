@@ -29,6 +29,14 @@ public class TrafficController {
     private static final double LANE_PRIORITY = 15;
     private static final double LANE_CAR = 40;
     private static final double LANE_BIKE = 65;
+    private static final int LOW_DENSITY_MAX_VEHICLES = 20;
+    private static final int MEDIUM_DENSITY_MAX_VEHICLES = 30;
+    private static final int HIGH_DENSITY_MAX_VEHICLES = 40;
+    private static final int VEHICLE_TYPE_ROLLS = 200;
+    private static final int FIRE_TRUCK_ROLLS = 5;     // 5/200 = 1/40 vehicles
+    private static final int AMBULANCE_ROLLS = 10;     // 10/200 = 1/20 vehicles
+    private static final int BUS_ROLLS = 20;           // 20/200 = 10%
+    private static final int CAR_ROLLS = 60;           // 60/200 = 30%
 
     private final SimulationMode mode;
     private final int worldMinX;
@@ -48,6 +56,7 @@ public class TrafficController {
     private ThreeWayPhaseController phaseController2;
     private IntersectionPhaseController phaseController3;
     private boolean autoSpawnEnabled = true;
+    private int trafficDensity = 2;
 
     public TrafficController() {
         this(SimulationMode.ROAD_NETWORK);
@@ -123,7 +132,7 @@ public class TrafficController {
         if (autoSpawnEnabled) {
             for (int sourceIdx : activeSourceIndices()) {
                 spawnTimers[sourceIdx] += dt;
-                if (spawnTimers[sourceIdx] >= 5.0) {
+                if (spawnTimers[sourceIdx] >= 5.0 && canSpawnMoreVehicles()) {
                     spawnTimers[sourceIdx] = 0;
                     spawnVehicle(sourceIdx);
                 }
@@ -143,13 +152,16 @@ public class TrafficController {
     }
 
     private void spawnVehicle(int sourceIdx) {
-        vehicleCount++;
+        if (!canSpawnMoreVehicles()) {
+            return;
+        }
         double speed = 60 + random.nextInt(40);
         SpawnPoint spawnPoint = createSpawnPoint(sourceIdx);
         if (spawnPoint == null) {
             return;
         }
 
+        vehicleCount++;
         Vehicle v = randomVehicle(spawnPoint.x, spawnPoint.y, speed, spawnPoint.direction);
         v.setTurnIntention(spawnPoint.turnIntention);
         vehicles.add(v);
@@ -280,17 +292,17 @@ public class TrafficController {
     }
 
     private Vehicle randomVehicle(double x, double y, double speed, double direction) {
-        int type = random.nextInt(100);
-        if (type < 5) {
+        int type = random.nextInt(VEHICLE_TYPE_ROLLS);
+        if (type < FIRE_TRUCK_ROLLS) {
             return new FireTruck("Fire" + vehicleCount, x, y, speed, direction);
         }
-        if (type < 10) {
-            return new Ambulance("Amb" + vehicleCount, x, y, speed, direction, random.nextBoolean());
+        if (type < FIRE_TRUCK_ROLLS + AMBULANCE_ROLLS) {
+            return new Ambulance("Amb" + vehicleCount, x, y, speed, direction, true);
         }
-        if (type < 20) {
+        if (type < FIRE_TRUCK_ROLLS + AMBULANCE_ROLLS + BUS_ROLLS) {
             return new Bus("Bus" + vehicleCount, x, y, speed * 0.7, direction);
         }
-        if (type < 50) {
+        if (type < FIRE_TRUCK_ROLLS + AMBULANCE_ROLLS + BUS_ROLLS + CAR_ROLLS) {
             return new Car("Car" + vehicleCount, x, y, speed, direction, 26, 13, false);
         }
         return new Motorbike("Bike" + vehicleCount, x, y, speed, direction, false);
@@ -299,7 +311,7 @@ public class TrafficController {
     private Vehicle manualVehicle(String typeStr, double x, double y, double speed, double direction) {
         return switch (typeStr) {
             case "Emergency" -> new Ambulance("Amb" + vehicleCount, x, y, speed, direction, true);
-            case "Ambulance" -> new Ambulance("Amb" + vehicleCount, x, y, speed, direction, false);
+            case "Ambulance" -> new Ambulance("Amb" + vehicleCount, x, y, speed, direction, true);
             case "FireTruck" -> new FireTruck("Fire" + vehicleCount, x, y, speed, direction);
             case "Bus" -> new Bus("Bus" + vehicleCount, x, y, speed * 0.7, direction);
             case "Car" -> new Car("Car" + vehicleCount, x, y, speed, direction, 26, 13, false);
@@ -326,6 +338,26 @@ public class TrafficController {
 
     public boolean isAutoSpawnEnabled() {
         return autoSpawnEnabled;
+    }
+
+    public void setTrafficDensity(int trafficDensity) {
+        this.trafficDensity = Math.max(1, Math.min(3, trafficDensity));
+    }
+
+    public int getTrafficDensity() {
+        return trafficDensity;
+    }
+
+    public int getMaxVehicles() {
+        return switch (trafficDensity) {
+            case 1 -> LOW_DENSITY_MAX_VEHICLES;
+            case 3 -> HIGH_DENSITY_MAX_VEHICLES;
+            default -> MEDIUM_DENSITY_MAX_VEHICLES;
+        };
+    }
+
+    private boolean canSpawnMoreVehicles() {
+        return vehicles.size() < getMaxVehicles();
     }
 
     public SimulationMode getMode() {

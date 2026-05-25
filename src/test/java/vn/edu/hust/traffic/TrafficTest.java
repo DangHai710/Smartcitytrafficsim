@@ -8,6 +8,7 @@ import vn.edu.hust.traffic.model.map.Intersection;
 import vn.edu.hust.traffic.model.map.RoundaboutIntersection;
 import vn.edu.hust.traffic.model.vehicle.Ambulance;
 import vn.edu.hust.traffic.model.vehicle.Car;
+import vn.edu.hust.traffic.model.vehicle.FireTruck;
 import vn.edu.hust.traffic.model.vehicle.Vehicle;
 import vn.edu.hust.traffic.model.map.ThreeWayIntersection;
 import vn.edu.hust.traffic.model.map.TrafficLight;
@@ -72,6 +73,334 @@ public class TrafficTest {
                 .orElseThrow();
 
         assertEquals(5, roundabout.getRoadAngles().length);
+    }
+
+    @Test
+    public void trafficDensityMapsToRequestedVehicleLimits() throws Exception {
+        TrafficController controller = new TrafficController(SimulationMode.ROAD_NETWORK);
+
+        controller.setTrafficDensity(1);
+        assertEquals(20, controller.getMaxVehicles());
+
+        controller.setTrafficDensity(2);
+        assertEquals(30, controller.getMaxVehicles());
+
+        controller.setTrafficDensity(3);
+        assertEquals(40, controller.getMaxVehicles());
+
+        controller.setTrafficDensity(1);
+        Method spawnVehicle = TrafficController.class.getDeclaredMethod("spawnVehicle", int.class);
+        spawnVehicle.setAccessible(true);
+        for (int i = 0; i < 60; i++) {
+            spawnVehicle.invoke(controller, i % 5);
+        }
+
+        assertEquals(20, controller.getVehicles().size());
+    }
+
+    @Test
+    public void crossIntersectionVehicleClearsInsteadOfStoppingInMiddle() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle follower = new Car("Follower", 390.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle leader = new Car("Leader", 420.0, 340.0, 0.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, leader));
+
+        follower.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(follower.getSpeed() > 0.0);
+        assertTrue(follower.getX() > 390.0);
+    }
+
+    @Test
+    public void closeVehicleInsideIntersectionKeepsCrawlingToClearDeadlock() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle clearingVehicle = new Car("Clearing", 390.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle crossTraffic = new Car("CrossTraffic", 390.0, 350.0, 0.0, Math.PI / 2.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(clearingVehicle, crossTraffic));
+
+        clearingVehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(clearingVehicle.getSpeed() > 0.0, "speed=" + clearingVehicle.getSpeed());
+        assertTrue(clearingVehicle.getX() > 390.0, "x=" + clearingVehicle.getX());
+    }
+
+    @Test
+    public void vehicleAlreadyInsideIntersectionDoesNotChangeLaneToYield() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle normal = new Car("Normal", 300.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle ambulance = new Ambulance("AmbBehind", 120.0, 340.0, 80.0, 0.0, true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(normal, ambulance));
+
+        normal.update(0.2, vehicles, intersections, 1400, 600);
+
+        assertEquals(340.0, normal.getY(), 0.01);
+        assertTrue(normal.getX() > 300.0, "x=" + normal.getX());
+    }
+
+    @Test
+    public void threeWayVehicleClearsInsteadOfStoppingInMiddle() {
+        List<TrafficLight> lights = greenLights(3);
+        List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
+        Vehicle follower = new Car("Follower", 1190.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle leader = new Car("Leader", 1220.0, 340.0, 0.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, leader));
+
+        follower.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(follower.getSpeed() > 0.0);
+        assertTrue(follower.getX() > 1190.0);
+    }
+
+    @Test
+    public void normalVehicleYieldsToPriorityBeforeEnteringIntersection() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle normal = new Car("Normal", 260.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle ambulance = new Ambulance("Amb1", 360.0, 120.0, 80.0, Math.PI / 2.0, true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(normal, ambulance));
+
+        normal.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertEquals(0.0, normal.getSpeed(), 0.01);
+    }
+
+    @Test
+    public void priorityVehicleDoesNotYieldToNormalVehicleAtIntersection() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle ambulance = new Ambulance("Amb1", 260.0, 340.0, 80.0, 0.0, true);
+        Vehicle normal = new Car("Normal", 360.0, 120.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(ambulance, normal));
+
+        ambulance.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(ambulance.getSpeed() > 0.0);
+        assertTrue(ambulance.getX() > 260.0);
+    }
+
+    @Test
+    public void ambulanceAndFireTruckCrossRedLight() {
+        List<TrafficLight> lights = redLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+
+        Vehicle ambulance = new Ambulance("AmbRed", 260.0, 340.0, 80.0, 0.0, false);
+        List<Vehicle> ambulanceOnly = new ArrayList<>(List.of(ambulance));
+        ambulance.update(0.15, ambulanceOnly, intersections, 1400, 600);
+
+        assertTrue(ambulance.isPriorityVehicle());
+        assertTrue(ambulance.getX() + ambulance.getWidth() / 2.0 > 280.0,
+                "x=" + ambulance.getX() + ", speed=" + ambulance.getSpeed());
+
+        Vehicle fireTruck = new FireTruck("FireRed", 250.0, 365.0, 80.0, 0.0);
+        List<Vehicle> fireTruckOnly = new ArrayList<>(List.of(fireTruck));
+        fireTruck.update(0.15, fireTruckOnly, intersections, 1400, 600);
+
+        assertTrue(fireTruck.isPriorityVehicle());
+        assertTrue(fireTruck.getX() + fireTruck.getWidth() / 2.0 > 280.0,
+                "x=" + fireTruck.getX() + ", speed=" + fireTruck.getSpeed());
+    }
+
+    @Test
+    public void priorityVehicleChangesToLeastBusyLaneBeforeRedQueue() {
+        List<TrafficLight> lights = redLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle ambulance = new Ambulance("AmbLane", 80.0, 340.0, 80.0, 0.0, true);
+        Vehicle middleLaneQueue = new Car("Middle", 250.0, 340.0, 0.0, 0.0, 26, 13, false);
+        Vehicle outerLaneQueue1 = new Car("Outer1", 230.0, 365.0, 0.0, 0.0, 26, 13, false);
+        Vehicle outerLaneQueue2 = new Car("Outer2", 260.0, 365.0, 0.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(
+                ambulance, middleLaneQueue, outerLaneQueue1, outerLaneQueue2));
+
+        ambulance.update(0.2, vehicles, intersections, 1400, 600);
+
+        assertTrue(ambulance.getY() < 340.0, "y=" + ambulance.getY());
+    }
+
+    @Test
+    public void redLightStoppedVehicleCanCrossStopLineToYieldToPriorityBehind() {
+        List<TrafficLight> lights = redLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle stoppedCar = new Car("Stopped", 260.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle ambulance = new Ambulance("AmbBehind", 120.0, 340.0, 80.0, 0.0, true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(stoppedCar, ambulance));
+
+        stoppedCar.update(0.15, vehicles, intersections, 1400, 600);
+
+        assertTrue(stoppedCar.getX() + stoppedCar.getWidth() / 2.0 > 280.0,
+                "x=" + stoppedCar.getX() + ", speed=" + stoppedCar.getSpeed());
+    }
+
+    @Test
+    public void yieldingVehicleMovesToLeastBusyLaneAwayFromPriorityVehicle() {
+        List<TrafficLight> lights = redLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle stoppedCar = new Car("Yielding", 260.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle ambulance = new Ambulance("AmbBehind", 120.0, 340.0, 80.0, 0.0, true);
+        Vehicle outerLaneQueue1 = new Car("Outer1", 220.0, 365.0, 0.0, 0.0, 26, 13, false);
+        Vehicle outerLaneQueue2 = new Car("Outer2", 250.0, 365.0, 0.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(
+                stoppedCar, ambulance, outerLaneQueue1, outerLaneQueue2));
+
+        stoppedCar.update(0.2, vehicles, intersections, 1400, 600);
+
+        assertTrue(stoppedCar.getY() < 340.0, "y=" + stoppedCar.getY());
+        assertTrue(stoppedCar.getX() + stoppedCar.getWidth() / 2.0 > 280.0,
+                "x=" + stoppedCar.getX() + ", speed=" + stoppedCar.getSpeed());
+    }
+
+    @Test
+    public void yieldingVehicleOnlyMovesOneAdjacentLane() {
+        List<TrafficLight> lights = redLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle yieldingCar = new Car("Yielding", 240.0, 365.0, 80.0, 0.0, 26, 13, false);
+        Vehicle ambulance = new Ambulance("AmbBehind", 120.0, 365.0, 80.0, 0.0, true);
+        Vehicle middleLaneQueue1 = new Car("Middle1", 420.0, 340.0, 0.0, 0.0, 26, 13, false);
+        Vehicle middleLaneQueue2 = new Car("Middle2", 450.0, 340.0, 0.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(
+                yieldingCar, ambulance, middleLaneQueue1, middleLaneQueue2));
+
+        for (int i = 0; i < 12; i++) {
+            yieldingCar.update(0.1, vehicles, intersections, 1400, 600);
+        }
+
+        assertEquals(340.0, yieldingCar.getY(), 2.0);
+        assertTrue(yieldingCar.getY() > 330.0, "y=" + yieldingCar.getY());
+    }
+
+    @Test
+    public void vehicleOutsidePriorityLaneDoesNotYieldAcrossLanes() {
+        List<TrafficLight> lights = redLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle sideLaneCar = new Car("Side", 260.0, 315.0, 80.0, 0.0, 26, 13, false);
+        Vehicle ambulance = new Ambulance("AmbBehind", 120.0, 365.0, 80.0, 0.0, true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(sideLaneCar, ambulance));
+
+        sideLaneCar.update(0.2, vehicles, intersections, 1400, 600);
+
+        assertEquals(315.0, sideLaneCar.getY(), 0.01);
+    }
+
+    @Test
+    public void laterNormalVehicleSlowsForEarlierNormalVehicleClearingIntersection() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle first = new Car("First", 285.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle second = new Car("Second", 390.0, 320.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(first, second));
+
+        first.update(0.05, vehicles, intersections, 1400, 600);
+        second.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(second.getSpeed() < 80.0, "speed=" + second.getSpeed());
+    }
+
+    @Test
+    public void vehicleDoesNotAdvanceIntoOccupiedIntersectionConflict() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle crossingVehicle = new Car("Crossing", 390.0, 340.0, 0.0, 0.0, 26, 13, false);
+        Vehicle enteringVehicle = new Car("Entering", 390.0, 330.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(crossingVehicle, enteringVehicle));
+
+        enteringVehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertEquals(0.0, enteringVehicle.getSpeed(), 0.01);
+        assertEquals(330.0, enteringVehicle.getY(), 0.01);
+    }
+
+    @Test
+    public void adjacentLaneVehicleDoesNotBlockGreenLightDeparture() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle adjacentLaneVehicle = new Car("A", 260.0, 340.0, 0.0, 0.0, 26, 13, false);
+        Vehicle departingVehicle = new Car("B", 260.0, 365.0, 80.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(adjacentLaneVehicle, departingVehicle));
+
+        departingVehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(departingVehicle.getSpeed() > 0.0, "speed=" + departingVehicle.getSpeed());
+        assertTrue(departingVehicle.getX() > 260.0, "x=" + departingVehicle.getX());
+    }
+
+    @Test
+    public void normalVehicleChangesLaneToOvertakeSlowerVehicle() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle follower = new Car("Follower", 120.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle slowLeader = new Car("Slow", 190.0, 340.0, 20.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, slowLeader));
+
+        follower.update(0.2, vehicles, intersections, 1400, 600);
+
+        assertTrue(follower.getY() < 340.0, "y=" + follower.getY());
+        assertTrue(follower.getSpeed() > slowLeader.getSpeed(), "speed=" + follower.getSpeed());
+    }
+
+    @Test
+    public void normalVehicleDoesNotOvertakeWhenTargetLaneIsUnsafe() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle follower = new Car("Follower", 120.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle slowLeader = new Car("Slow", 160.0, 340.0, 20.0, 0.0, 26, 13, false);
+        Vehicle innerLaneCar = new Car("Inner", 125.0, 315.0, 80.0, 0.0, 26, 13, false);
+        Vehicle outerLaneCar = new Car("Outer", 125.0, 365.0, 80.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, slowLeader, innerLaneCar, outerLaneCar));
+
+        follower.update(0.2, vehicles, intersections, 1400, 600);
+
+        assertEquals(340.0, follower.getY(), 0.01);
+        assertTrue(follower.getSpeed() < 80.0, "speed=" + follower.getSpeed());
+    }
+
+    @Test
+    public void normalVehicleDoesNotOvertakeVehicleStoppedByRedLight() {
+        List<TrafficLight> lights = greenStraightRedLeftLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle follower = new Car("Follower", 120.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle stoppedLeftTurner = new Car("StoppedLeft", 160.0, 340.0, 0.0, 0.0, 26, 13, false);
+        stoppedLeftTurner.setTurnIntention(1);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, stoppedLeftTurner));
+
+        follower.update(0.2, vehicles, intersections, 1400, 600);
+
+        assertEquals(340.0, follower.getY(), 0.01);
+        assertTrue(follower.getSpeed() < 80.0, "speed=" + follower.getSpeed());
+    }
+
+    @Test
+    public void normalOvertakeOnlyMovesOneAdjacentLane() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle follower = new Car("Follower", 120.0, 365.0, 80.0, 0.0, 26, 13, false);
+        Vehicle slowLeader = new Car("Slow", 190.0, 365.0, 20.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, slowLeader));
+
+        for (int i = 0; i < 4; i++) {
+            follower.update(0.2, vehicles, intersections, 1400, 600);
+        }
+
+        assertEquals(340.0, follower.getY(), 2.0);
+        assertTrue(follower.getY() > 330.0, "y=" + follower.getY());
+    }
+
+    @Test
+    public void overtakingVehicleReturnsToOriginalLaneAfterPassing() {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle follower = new Car("Follower", 20.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle slowLeader = new Car("Slow", 85.0, 340.0, 10.0, 0.0, 26, 13, false);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, slowLeader));
+
+        for (int i = 0; i < 60; i++) {
+            follower.update(0.05, vehicles, intersections, 1400, 600);
+        }
+
+        assertTrue(follower.getX() > slowLeader.getX() + 35.0,
+                "follower=" + follower.getX() + ", slow=" + slowLeader.getX());
+        assertEquals(340.0, follower.getY(), 3.0);
     }
 
     @Test
@@ -253,6 +582,38 @@ public class TrafficTest {
     }
 
     @Test
+    public void fiveWayRoundaboutStopsForCloseVehicleAhead() throws Exception {
+        double cx = 600.0;
+        double cy = 300.0;
+        double radius = 140.0;
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", cx, cy, 100.0));
+        Vehicle follower = new Car("Follower", cx + radius, cy, 80.0, -Math.PI / 2.0, 26, 13, false);
+        follower.insideRoundabout = true;
+        follower.roundaboutAngle = 0.0;
+        setTargetExitIndex(follower, 1);
+
+        double leaderAngle = -0.12;
+        Vehicle leader = new Car("Leader",
+                cx + radius * Math.cos(leaderAngle),
+                cy + radius * Math.sin(leaderAngle),
+                0.0,
+                -Math.PI / 2.0,
+                26,
+                13,
+                false);
+        leader.insideRoundabout = true;
+        leader.roundaboutAngle = leaderAngle;
+        setTargetExitIndex(leader, 1);
+
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, leader));
+
+        follower.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertEquals(0.0, follower.getSpeed(), 0.01);
+        assertEquals(0.0, follower.roundaboutAngle, 0.01);
+    }
+
+    @Test
     public void fiveWayRoundaboutCapturesVehicleBeforeItCrossesGreenIsland() throws Exception {
         List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
         List<Vehicle> vehicles = new ArrayList<>();
@@ -376,15 +737,42 @@ public class TrafficTest {
         field.setBoolean(vehicle, value);
     }
 
-    private Vehicle runThreeWayVehicle(String id, double x, double y, double direction, int turnIntention,
-            double seconds) {
+    private List<TrafficLight> greenLights(int count) {
         List<TrafficLight> lights = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < count; i++) {
             TrafficLight light = new TrafficLight();
             light.forceState(TrafficLight.State.GREEN, 999);
             light.forceLeftTurnState(TrafficLight.State.GREEN, 999);
             lights.add(light);
         }
+        return lights;
+    }
+
+    private List<TrafficLight> redLights(int count) {
+        List<TrafficLight> lights = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            TrafficLight light = new TrafficLight();
+            light.forceState(TrafficLight.State.RED, 999);
+            light.forceLeftTurnState(TrafficLight.State.RED, 999);
+            lights.add(light);
+        }
+        return lights;
+    }
+
+    private List<TrafficLight> greenStraightRedLeftLights(int count) {
+        List<TrafficLight> lights = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            TrafficLight light = new TrafficLight();
+            light.forceState(TrafficLight.State.GREEN, 999);
+            light.forceLeftTurnState(TrafficLight.State.RED, 999);
+            lights.add(light);
+        }
+        return lights;
+    }
+
+    private Vehicle runThreeWayVehicle(String id, double x, double y, double direction, int turnIntention,
+            double seconds) {
+        List<TrafficLight> lights = greenLights(3);
         List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
         List<Vehicle> vehicles = new ArrayList<>();
         Vehicle vehicle = new Car(id, x, y, 80.0, direction, 26, 13, false);

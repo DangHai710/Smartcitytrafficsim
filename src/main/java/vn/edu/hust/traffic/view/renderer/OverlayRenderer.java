@@ -79,9 +79,9 @@ public class OverlayRenderer {
 
     private String densityLabel(int density) {
         return switch (density) {
-            case 1 -> "It";
-            case 3 -> "Dong";
-            default -> "Vua";
+            case 1 -> "Th\u1ea5p";
+            case 3 -> "Cao";
+            default -> "Trung b\u00ecnh";
         };
     }
 }
