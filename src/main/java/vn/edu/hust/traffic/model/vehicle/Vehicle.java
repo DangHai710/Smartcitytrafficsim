@@ -21,6 +21,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     private static final double SMOOTH_TURN_DURATION = 0.38;
     private static final double INTERSECTION_CLEAR_RADIUS = 180.0;
     private static final double CLEARING_MIN_SPEED_FACTOR = 0.45;
+    private static final double TURN_EXIT_CLEARANCE_DURATION = 0.85;
+    private static final double TURN_EXIT_MIN_SPEED_FACTOR = 0.28;
+    private static final double YIELD_LANE_CHANGE_SPEED = 150.0;
+    private static final double ROUNDABOUT_CRAWL_MIN_SPEED_FACTOR = 0.22;
     private static long intersectionEntryCounter = 0;
     private static final double[] STANDARD_LANE_OFFSETS = { 15.0, 40.0, 65.0 };
     private static final double[] ROUNDABOUT_LANE_OFFSETS = { 15.0, 40.0, 65.0 };
@@ -50,6 +54,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     protected double smoothTurnElapsed = 0.0;
     protected double smoothTurnDuration = SMOOTH_TURN_DURATION;
     protected boolean smoothTurnCompletesTurn = true;
+    protected double turnExitClearanceTime = 0.0;
     protected boolean overtakingSlowVehicle = false;
     protected double overtakeOriginalLaneOffset = 0.0;
     protected double overtakeTargetLaneOffset = 0.0;
@@ -61,6 +66,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     protected int yieldLightIdx = -1;
     protected String yieldIntersectionId = null;
     protected String yieldPriorityVehicleId = null;
+    protected boolean bypassingTurningVehicle = false;
+    protected double bypassTargetLaneOffset = 0.0;
+    protected int bypassLightIdx = -1;
+    protected String bypassIntersectionId = null;
+    protected String bypassVehicleId = null;
 
     // Roundabout routing and state fields
     protected int targetExitIndex = -1;
@@ -150,13 +160,16 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         double safeDistance = (width > 30) ? 50 : 30;
         final double SLOW_ZONE = 80.0;
         boolean shouldStop = false;
+        boolean hardSameLaneBlockAhead = false;
         double currentTargetSpeed = baseSpeed;
+        boolean forcingTurnExit = hasTurned && turnExitClearanceTime > 0.0;
+        turnExitClearanceTime = Math.max(0.0, turnExitClearanceTime - Math.max(0.0, dt));
 
         if (continueSmoothTurn(dt, allVehicles, intersections)) {
             return;
         }
 
-        if (continueDiagonalRightTurn(dt)) {
+        if (continueDiagonalRightTurn(dt, allVehicles)) {
             return;
         }
 
@@ -167,6 +180,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             activeIntersectionEntryOrder = Long.MAX_VALUE;
             resetOvertakeState();
             resetYieldState();
+            resetTurningBypassState();
             this.speed = baseSpeed;
             movePhysically(dt);
             if (isTurningDiagonally) {
@@ -178,6 +192,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         if (targetInter instanceof RoundaboutIntersection) {
             resetOvertakeState();
             resetYieldState();
+            resetTurningBypassState();
             updateRoundabout(dt, allVehicles, (RoundaboutIntersection) targetInter);
             return;
         }
@@ -238,6 +253,10 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 distToStopLine = (y - hl) - stopY_BTT;
                 passedStopLine = (y - hl) <= stopY_BTT;
                 break;
+        }
+        if (forcingTurnExit) {
+            passedStopLine = true;
+            distToStopLine = -1.0;
         }
         markIntersectionEntryIfNeeded(passedStopLine);
 
@@ -373,10 +392,17 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
                         double targetOffset = stableYieldLaneOffset(allVehicles, intersections, targetInter,
                                 lightIdx, other);
-                        moveTowardStandardLane(targetInter, lightIdx, targetOffset, dt, 95.0);
+                        moveTowardStandardLane(targetInter, lightIdx, targetOffset, dt, YIELD_LANE_CHANGE_SPEED);
                     }
                 }
             }
+        }
+        if (!yieldingThisUpdate && continueYieldLaneChangeToTargetIfNeeded(
+                allVehicles, intersections, targetInter, lightIdx, dt)) {
+            isFleeing = true;
+            yieldingThisUpdate = true;
+            shouldStop = false;
+            currentTargetSpeed = Math.max(currentTargetSpeed, baseSpeed * 0.65);
         }
         if (!yieldingThisUpdate) {
             resetYieldState();
@@ -389,7 +415,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         TrafficLight.State myEffectiveLight = light.getStateForTurn(turnIntention, hasTurned);
         boolean isRightTurnOnRed = (turnIntention == 2 && !hasTurned);
         boolean mustStopByLight = false;
-        if (!isPriorityVehicle && !isFleeing) {
+        if (!isPriorityVehicle && !isFleeing && !forcingTurnExit) {
             if (myEffectiveLight == TrafficLight.State.RED ||
                 (myEffectiveLight == TrafficLight.State.YELLOW && !passedStopLine)) {
                 mustStopByLight = true;
@@ -422,10 +448,20 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 mustStopByLight, isFleeing)) {
             currentTargetSpeed = Math.max(currentTargetSpeed, baseSpeed * 0.95);
         }
+        boolean bypassingTurningBlocker = updateTurningVehicleBypassIfNeeded(
+                allVehicles, intersections, targetInter, lightIdx, dt);
+        if (bypassingTurningBlocker) {
+            shouldStop = false;
+            currentTargetSpeed = Math.max(currentTargetSpeed, baseSpeed * (isPriorityVehicle ? 0.95 : 0.70));
+        }
 
         // BƯỚC 4: Rà phanh động (Dynamic Right of Way) - Thuật toán giao tuyến quang học
         for (Vehicle other : allVehicles) {
             if (other == this) continue;
+            if (forcingTurnExit) continue;
+            if (bypassingTurningBlocker && isActiveTurningBypassBlocker(other, targetInter, lightIdx)) {
+                continue;
+            }
 
             int otherLightIdx = getLightIdx(other.direction);
             boolean sameAxis = (lightIdx < 2 && otherLightIdx < 2) || (lightIdx >= 2 && otherLightIdx >= 2);
@@ -566,9 +602,12 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             if (other == this) continue;
 
             // Xử lý L-shaped following: Hai xe cùng nguồn, cùng hướng rẽ, nhưng xe kia đã rẽ
+            if (bypassingTurningBlocker && isActiveTurningBypassBlocker(other, targetInter, lightIdx)) {
+                continue;
+            }
             boolean isLShapedFollow = false;
             if (this.originalLightIdx == other.originalLightIdx && this.turnIntention == other.turnIntention && this.turnIntention != 0) {
-                if (!this.hasTurned && other.hasTurned) {
+                if (!this.hasTurned && (other.hasTurned || other.isTurningSmoothly || other.isTurningDiagonally)) {
                     isLShapedFollow = true;
                 }
             }
@@ -631,7 +670,9 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 else if (originalLightIdx == 2) otherOriginPathCoord = cx - (turnIntention == 1 ? 15 : 65);
                 else if (originalLightIdx == 3) otherOriginPathCoord = cx + (turnIntention == 1 ? 15 : 65);
 
-                if (otherLightIdx == 0) otherDistFromTurn = (other.x - otherHL) - otherOriginPathCoord;
+                if (other.isTurningSmoothly || other.isTurningDiagonally) {
+                    otherDistFromTurn = 0.0;
+                } else if (otherLightIdx == 0) otherDistFromTurn = (other.x - otherHL) - otherOriginPathCoord;
                 else if (otherLightIdx == 1) otherDistFromTurn = otherOriginPathCoord - (other.x + otherHL);
                 else if (otherLightIdx == 2) otherDistFromTurn = (other.y - otherHL) - otherOriginPathCoord;
                 else if (otherLightIdx == 3) otherDistFromTurn = otherOriginPathCoord - (other.y + otherHL);
@@ -656,10 +697,14 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 double minGap = 8.0;
                 if (gap <= minGap) {
                     shouldStop = true;
+                    hardSameLaneBlockAhead = true;
                 } else {
                     double ratio = (gap - minGap) / (safeDistance - minGap);
                     ratio = Math.max(0, Math.min(1, ratio));
                     double followSpeed = other.speed * ratio;
+                    if (forcingTurnExit) {
+                        followSpeed = Math.max(followSpeed, baseSpeed * TURN_EXIT_MIN_SPEED_FACTOR);
+                    }
                     currentTargetSpeed = Math.min(currentTargetSpeed, followSpeed);
                 }
             }
@@ -668,7 +713,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         // BƯỚC 6: Áp tốc độ vật lý
         boolean inIntersection = Math.hypot(x - cx, y - cy) < INTERSECTION_CLEAR_RADIUS;
         boolean clearingIntersection = passedStopLine && inIntersection;
-        if (clearingIntersection && shouldStop) {
+        if (clearingIntersection && shouldStop && !(forcingTurnExit && hardSameLaneBlockAhead)) {
             shouldStop = false;
             currentTargetSpeed = Math.max(currentTargetSpeed, baseSpeed * CLEARING_MIN_SPEED_FACTOR);
         }
@@ -703,7 +748,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                     this.speed = currentTargetSpeed;
                 }
             }
-            this.speed = limitSpeedForPredictedIntersectionCollision(dt, this.speed, allVehicles, targetInter);
+            if (!forcingTurnExit) {
+                this.speed = limitSpeedForPredictedIntersectionCollision(dt, this.speed, allVehicles, targetInter);
+            } else {
+                this.speed = Math.max(this.speed, baseSpeed * TURN_EXIT_MIN_SPEED_FACTOR);
+            }
             movePhysically(dt);
             finishDiagonalRightTurnIfNeeded(cx, cy);
         }
@@ -786,6 +835,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         double safeDistance = (width > 30) ? 50 : 30;
         double currentTargetSpeed = baseSpeed;
         boolean shouldStop = false;
+        boolean hardRoundaboutBlock = false;
         boolean speedAlreadyApplied = false;
 
         if (!insideRoundabout) {
@@ -892,7 +942,13 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                         if (gap < safeDistance) {
                             double minGap = 8.0;
                             if (gap <= minGap) {
-                                shouldStop = true;
+                                if (gap <= 0.0) {
+                                    hardRoundaboutBlock = true;
+                                    shouldStop = true;
+                                } else {
+                                    currentTargetSpeed = Math.min(currentTargetSpeed,
+                                            Math.max(other.speed, baseSpeed * ROUNDABOUT_CRAWL_MIN_SPEED_FACTOR));
+                                }
                             } else {
                                 double ratio = (gap - minGap) / (safeDistance - minGap);
                                 currentTargetSpeed = Math.min(currentTargetSpeed, other.speed * ratio);
@@ -902,11 +958,17 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
                 }
             }
 
-            if (shouldStop) {
+            if (shouldStop && hardRoundaboutBlock) {
                 speed = 0;
                 newR = currentR;
             } else {
-                speed = speed + (currentTargetSpeed - speed) * 0.1;
+                double adjustedTargetSpeed = shouldStop
+                        ? Math.max(currentTargetSpeed, baseSpeed * ROUNDABOUT_CRAWL_MIN_SPEED_FACTOR)
+                        : currentTargetSpeed;
+                speed = speed + (adjustedTargetSpeed - speed) * 0.1;
+                if (shouldStop) {
+                    speed = Math.max(speed, baseSpeed * ROUNDABOUT_CRAWL_MIN_SPEED_FACTOR);
+                }
             }
             speedAlreadyApplied = true;
 
@@ -1291,6 +1353,174 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         yieldPriorityVehicleId = null;
     }
 
+    private void resetTurningBypassState() {
+        bypassingTurningVehicle = false;
+        bypassTargetLaneOffset = 0.0;
+        bypassLightIdx = -1;
+        bypassIntersectionId = null;
+        bypassVehicleId = null;
+    }
+
+    private boolean updateTurningVehicleBypassIfNeeded(List<Vehicle> allVehicles,
+            List<Intersection> intersections, Intersection intersection, int lightIdx, double dt) {
+        boolean insideIntersection = intersection != null && isInsideStandardIntersection(intersection, x, y);
+        boolean canBypassInCurrentPosition = isPriorityVehicle
+                ? (passedStopLine || insideIntersection)
+                : (passedStopLine && insideIntersection);
+        if (intersection == null || intersection instanceof RoundaboutIntersection
+                || isTurningDiagonally || isTurningSmoothly || !canBypassInCurrentPosition) {
+            resetTurningBypassState();
+            return false;
+        }
+
+        Vehicle blocker = findTurningVehicleBlockingCurrentLane(allVehicles, intersection, lightIdx);
+        if (blocker == null && bypassingTurningVehicle
+                && lightIdx == bypassLightIdx
+                && intersection.getId().equals(bypassIntersectionId)) {
+            moveTowardStandardLane(intersection, lightIdx, bypassTargetLaneOffset, dt, 115.0);
+            if (Math.abs(Math.abs(standardLaneOffset(intersection, lightIdx, x, y))
+                    - bypassTargetLaneOffset) < 2.0) {
+                resetTurningBypassState();
+            }
+            return true;
+        }
+        if (blocker == null) {
+            resetTurningBypassState();
+            return false;
+        }
+
+        if (!bypassingTurningVehicle
+                || lightIdx != bypassLightIdx
+                || !intersection.getId().equals(bypassIntersectionId)
+                || !blocker.id.equals(bypassVehicleId)) {
+            double currentOffset = Math.abs(standardLaneOffset(intersection, lightIdx, x, y));
+            int currentLaneIndex = nearestStandardLaneIndex(currentOffset);
+            int targetLaneIndex = chooseTurningBypassLaneIndex(allVehicles, intersections, intersection,
+                    lightIdx, currentLaneIndex, blocker);
+            if (targetLaneIndex < 0) {
+                resetTurningBypassState();
+                return false;
+            }
+
+            bypassingTurningVehicle = true;
+            bypassTargetLaneOffset = Math.min(STANDARD_LANE_OFFSETS[targetLaneIndex],
+                    roadCenterOffsetLimit());
+            bypassLightIdx = lightIdx;
+            bypassIntersectionId = intersection.getId();
+            bypassVehicleId = blocker.id;
+        }
+
+        moveTowardStandardLane(intersection, lightIdx, bypassTargetLaneOffset, dt, 115.0);
+        return true;
+    }
+
+    private Vehicle findTurningVehicleBlockingCurrentLane(List<Vehicle> allVehicles,
+            Intersection intersection, int lightIdx) {
+        Vehicle closest = null;
+        double closestAhead = Double.MAX_VALUE;
+        double dirX = Math.cos(direction);
+        double dirY = Math.sin(direction);
+        double laneThreshold = Math.max(20.0, height + 10.0);
+        for (Vehicle other : allVehicles) {
+            if (other == this || other.isPriorityVehicle) {
+                continue;
+            }
+            if (!isPriorityVehicle
+                    && other.originalLightIdx == originalLightIdx
+                    && other.turnIntention == turnIntention) {
+                continue;
+            }
+            boolean turningInIntersection = (other.isTurningSmoothly || other.isTurningDiagonally || other.hasTurned)
+                    && isInsideStandardIntersection(intersection, other.x, other.y);
+            if (!turningInIntersection) {
+                continue;
+            }
+
+            double relX = other.x - x;
+            double relY = other.y - y;
+            double ahead = relX * dirX + relY * dirY;
+            if (ahead <= 0.0 || ahead > 150.0) {
+                continue;
+            }
+            double lateral = Math.abs(relX * dirY - relY * dirX);
+            if (lateral > laneThreshold) {
+                continue;
+            }
+            double offset = Math.abs(standardLaneOffset(intersection, lightIdx, other.x, other.y));
+            double myOffset = Math.abs(standardLaneOffset(intersection, lightIdx, x, y));
+            if (nearestStandardLaneIndex(offset) != nearestStandardLaneIndex(myOffset)) {
+                continue;
+            }
+            if (ahead < closestAhead) {
+                closestAhead = ahead;
+                closest = other;
+            }
+        }
+        return closest;
+    }
+
+    private int chooseTurningBypassLaneIndex(List<Vehicle> allVehicles, List<Intersection> intersections,
+            Intersection intersection, int lightIdx, int currentLaneIndex, Vehicle blocker) {
+        int bestIndex = -1;
+        int bestCount = Integer.MAX_VALUE;
+        for (int candidate = 0; candidate < STANDARD_LANE_OFFSETS.length; candidate++) {
+            if (candidate == currentLaneIndex || Math.abs(candidate - currentLaneIndex) != 1) {
+                continue;
+            }
+            double offset = Math.min(STANDARD_LANE_OFFSETS[candidate], roadCenterOffsetLimit());
+            if (!isTurningBypassLaneSafe(allVehicles, intersections, intersection, lightIdx, offset, blocker)) {
+                continue;
+            }
+
+            int count = countVehiclesInLaneWindow(allVehicles, intersections, intersection, lightIdx, offset);
+            if (count < bestCount) {
+                bestCount = count;
+                bestIndex = candidate;
+            }
+        }
+        return bestIndex;
+    }
+
+    private boolean isTurningBypassLaneSafe(List<Vehicle> allVehicles, List<Intersection> intersections,
+            Intersection intersection, int lightIdx, double targetOffset, Vehicle blocker) {
+        if (!isLaneSafeForChange(allVehicles, intersections, intersection, lightIdx, targetOffset)) {
+            return false;
+        }
+
+        double targetLaneCoord = standardLaneCoordinate(intersection, lightIdx, targetOffset);
+        double myLongitudinal = longitudinalCoordinate(lightIdx, x, y);
+        for (Vehicle other : allVehicles) {
+            if (other == this || other == blocker) {
+                continue;
+            }
+            if (!isInsideStandardIntersectionGuardZone(intersection, other.x, other.y, other.x, other.y)
+                    && !isSameApproachToIntersection(other, intersections, intersection, lightIdx)) {
+                continue;
+            }
+
+            double otherLongitudinal = longitudinalCoordinate(lightIdx, other.x, other.y);
+            double relative = signedLongitudinalDelta(lightIdx, myLongitudinal, otherLongitudinal);
+            if (relative < -70.0 || relative > 180.0) {
+                continue;
+            }
+
+            double lateral = lightIdx < 2
+                    ? Math.abs(other.y - targetLaneCoord)
+                    : Math.abs(other.x - targetLaneCoord);
+            if (lateral < Math.max(18.0, (height + other.height) * 0.65)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isActiveTurningBypassBlocker(Vehicle other, Intersection intersection, int lightIdx) {
+        return bypassingTurningVehicle
+                && lightIdx == bypassLightIdx
+                && intersection.getId().equals(bypassIntersectionId)
+                && other.id.equals(bypassVehicleId);
+    }
+
     private boolean hasStoppedQueueAhead(List<Vehicle> allVehicles, List<Intersection> intersections,
             Intersection intersection, int lightIdx) {
         for (Vehicle other : allVehicles) {
@@ -1336,6 +1566,25 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         yieldIntersectionId = intersection.getId();
         yieldPriorityVehicleId = priorityVehicle.id;
         return yieldTargetLaneOffset;
+    }
+
+    private boolean continueYieldLaneChangeToTargetIfNeeded(List<Vehicle> allVehicles,
+            List<Intersection> intersections, Intersection intersection, int lightIdx, double dt) {
+        if (!yieldingToPriorityVehicle || intersection == null || intersection instanceof RoundaboutIntersection
+                || lightIdx != yieldLightIdx || !intersection.getId().equals(yieldIntersectionId)) {
+            return false;
+        }
+
+        double currentOffset = Math.abs(standardLaneOffset(intersection, lightIdx, x, y));
+        if (Math.abs(currentOffset - yieldTargetLaneOffset) <= 1.5) {
+            resetYieldState();
+            return false;
+        }
+
+        if (isLaneSafeForChange(allVehicles, intersections, intersection, lightIdx, yieldTargetLaneOffset)) {
+            moveTowardStandardLane(intersection, lightIdx, yieldTargetLaneOffset, dt, YIELD_LANE_CHANGE_SPEED);
+        }
+        return true;
     }
 
     private int chooseAdjacentYieldLaneIndex(List<Vehicle> allVehicles, List<Intersection> intersections,
@@ -1528,6 +1777,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         hasTurned = false;
         passedStopLine = false;
         activeIntersectionEntryOrder = Long.MAX_VALUE;
+        resetTurningBypassState();
     }
 
     private void markIntersectionEntryIfNeeded(boolean entered) {
@@ -1568,6 +1818,9 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             if (other == this) {
                 continue;
             }
+            if (isActiveTurningBypassBlocker(other, intersection, getLightIdx(direction))) {
+                continue;
+            }
 
             double otherNextX = other.x + Math.cos(other.direction) * Math.max(0.0, other.speed) * dt;
             double otherNextY = other.y + Math.sin(other.direction) * Math.max(0.0, other.speed) * dt;
@@ -1595,9 +1848,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             }
 
             boolean mustYield = shouldYieldForIntersectionCollision(other);
-            boolean hardCollision = currentDistance < collisionGap
-                    || nextDistance < collisionGap
-                    || pathDistance < collisionGap * 0.85;
+            boolean immediateCollision = currentDistance < collisionGap || nextDistance < collisionGap;
+            boolean hardCollision = immediateCollision || pathDistance < collisionGap * 0.85;
             if (!mustYield && !hardCollision) {
                 continue;
             }
@@ -1610,7 +1862,11 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             } else {
                 boolean clearFirst = hasIntersectionClearPriorityOver(other, intersection);
                 if (!clearFirst) {
-                    limitedSpeed = 0.0;
+                    if (immediateCollision) {
+                        limitedSpeed = 0.0;
+                        continue;
+                    }
+                    limitedSpeed = Math.min(limitedSpeed, baseSpeed * CLEARING_MIN_SPEED_FACTOR);
                     continue;
                 }
                 double crawlFactor = CLEARING_MIN_SPEED_FACTOR;
@@ -1841,13 +2097,13 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             return false;
         }
 
-        boolean clearingIntersection = passedStopLine || isInsideAnyStandardIntersection(intersections);
-        if (isSmoothTurnBlocked(allVehicles, dt, clearingIntersection)) {
+        double turnSpeedFactor = smoothTurnSpeedFactor(allVehicles, dt);
+        if (turnSpeedFactor <= 0.0) {
             speed = 0;
             return true;
         }
 
-        smoothTurnElapsed += Math.max(0.0, dt);
+        smoothTurnElapsed += Math.max(0.0, dt) * turnSpeedFactor;
         double rawT = smoothTurnElapsed / smoothTurnDuration;
         double t = Math.min(1.0, rawT);
         double eased = smoothStep(t);
@@ -1855,7 +2111,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         x = smoothTurnStartX + (smoothTurnEndX - smoothTurnStartX) * eased;
         y = smoothTurnStartY + (smoothTurnEndY - smoothTurnStartY) * eased;
         direction = interpolateAngle(smoothTurnStartDirection, smoothTurnEndDirection, eased);
-        speed = baseSpeed;
+        speed = baseSpeed * turnSpeedFactor;
 
         if (t >= 1.0) {
             x = smoothTurnEndX;
@@ -1864,18 +2120,20 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
             isTurningSmoothly = false;
             if (smoothTurnCompletesTurn) {
                 hasTurned = true;
+                passedStopLine = true;
+                turnExitClearanceTime = TURN_EXIT_CLEARANCE_DURATION;
             }
         }
 
         return true;
     }
 
-    private boolean isSmoothTurnBlocked(List<Vehicle> allVehicles, double dt, boolean allowSoftBlock) {
+    private double smoothTurnSpeedFactor(List<Vehicle> allVehicles, double dt) {
         double pathX = smoothTurnEndX - smoothTurnStartX;
         double pathY = smoothTurnEndY - smoothTurnStartY;
         double pathLength = Math.hypot(pathX, pathY);
         if (pathLength < 1.0) {
-            return false;
+            return 1.0;
         }
 
         double dirX = pathX / pathLength;
@@ -1886,6 +2144,7 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         double nextX = smoothTurnStartX + pathX * nextEased;
         double nextY = smoothTurnStartY + pathY * nextEased;
         double safeGap = Math.max(34.0, getHalfLength() + 24.0);
+        double factor = 1.0;
 
         for (Vehicle other : allVehicles) {
             if (other == this) {
@@ -1901,32 +2160,25 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
 
             if (ahead > -other.getHalfLength() && ahead < combinedGap && lateral < laneThreshold) {
                 double hardGap = getHalfLength() + other.getHalfLength() + 6.0;
-                if ((!isPriorityVehicle && other.isPriorityVehicle) || !allowSoftBlock || ahead < hardGap) {
-                    return true;
+                if (ahead <= hardGap) {
+                    return 0.0;
                 }
+                double localFactor = (ahead - hardGap) / Math.max(1.0, combinedGap - hardGap);
+                factor = Math.min(factor, Math.max(0.18, Math.min(1.0, localFactor)));
             }
 
             double nextDistance = Math.hypot(other.x - nextX, other.y - nextY);
             double overlapDistance = Math.max(18.0, (getHalfLength() + other.getHalfLength()) * 0.55);
             if (nextDistance < overlapDistance
                     && (other.isTurningSmoothly || other.isTurningDiagonally || other.insideRoundabout || other.exitedRoundabout)) {
-                return true;
+                if (nextDistance < overlapDistance * 0.75) {
+                    return 0.0;
+                }
+                factor = Math.min(factor, 0.18);
             }
         }
 
-        return false;
-    }
-
-    private boolean isInsideAnyStandardIntersection(List<Intersection> intersections) {
-        for (Intersection intersection : intersections) {
-            if (intersection instanceof RoundaboutIntersection) {
-                continue;
-            }
-            if (Math.hypot(x - intersection.getX(), y - intersection.getY()) < INTERSECTION_CLEAR_RADIUS) {
-                return true;
-            }
-        }
-        return false;
+        return factor;
     }
 
     private double smoothStep(double t) {
@@ -1969,15 +2221,68 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
         startSmoothTurn(targetX, targetY, targetDirection, true, SMOOTH_TURN_DURATION);
     }
 
-    private boolean continueDiagonalRightTurn(double dt) {
+    private boolean continueDiagonalRightTurn(double dt, List<Vehicle> allVehicles) {
         if (!isTurningDiagonally) {
             return false;
         }
 
-        speed = baseSpeed;
+        double turnSpeedFactor = diagonalRightTurnSpeedFactor(allVehicles, dt);
+        if (turnSpeedFactor <= 0.0) {
+            speed = 0;
+            return true;
+        }
+
+        speed = baseSpeed * turnSpeedFactor;
         movePhysically(dt);
         finishDiagonalRightTurnIfNeeded(diagonalTurnCenterX, diagonalTurnCenterY);
         return true;
+    }
+
+    private double diagonalRightTurnSpeedFactor(List<Vehicle> allVehicles, double dt) {
+        double dirX = Math.cos(direction);
+        double dirY = Math.sin(direction);
+        double nextX = x + dirX * baseSpeed * dt;
+        double nextY = y + dirY * baseSpeed * dt;
+        double safeGap = Math.max(34.0, getHalfLength() + 24.0);
+        double factor = 1.0;
+
+        for (Vehicle other : allVehicles) {
+            if (other == this) {
+                continue;
+            }
+
+            double relX = other.x - x;
+            double relY = other.y - y;
+            double ahead = relX * dirX + relY * dirY;
+            double lateral = Math.abs(relX * dirY - relY * dirX);
+            double laneThreshold = Math.max(18.0, (height + other.height) * 0.8);
+            double combinedGap = safeGap + other.getHalfLength();
+            boolean sameTurnStream = originalLightIdx == other.originalLightIdx
+                    && turnIntention == other.turnIntention
+                    && turnIntention != 0;
+
+            if (ahead > -other.getHalfLength() && ahead < combinedGap && lateral < laneThreshold) {
+                double hardGap = getHalfLength() + other.getHalfLength() + 6.0;
+                if (ahead <= hardGap) {
+                    return 0.0;
+                }
+                double localFactor = (ahead - hardGap) / Math.max(1.0, combinedGap - hardGap);
+                factor = Math.min(factor, Math.max(0.18, Math.min(1.0, localFactor)));
+            }
+
+            double nextDistance = Math.hypot(other.x - nextX, other.y - nextY);
+            double overlapDistance = Math.max(18.0, (getHalfLength() + other.getHalfLength()) * 0.55);
+            if (sameTurnStream
+                    && nextDistance < overlapDistance
+                    && (other.isTurningDiagonally || other.isTurningSmoothly || other.hasTurned)) {
+                if (nextDistance < overlapDistance * 0.75) {
+                    return 0.0;
+                }
+                factor = Math.min(factor, 0.18);
+            }
+        }
+
+        return factor;
     }
 
     private boolean isNextExit(double currentAngle, double targetExitAngle, double[] roadAngles) {
