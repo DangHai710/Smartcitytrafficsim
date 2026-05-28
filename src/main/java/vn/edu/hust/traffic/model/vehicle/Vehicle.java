@@ -164,7 +164,8 @@ public abstract class Vehicle implements vn.edu.hust.traffic.base.Renderable, vn
     }
 
     public void update(double dt, List<Vehicle> allVehicles, List<Intersection> intersections, int screenWidth, int screenHeight) {
-        double safeDistance = (width > 30) ? 50 : 30;
+        double BASE_SAFE = (width > 30) ? 50 : 30;
+    	double safeDistance = BASE_SAFE * strategy.getSafeDistanceMultiplier();
         final double SLOW_ZONE = 80.0;
         boolean shouldStop = false;
         boolean hardSameLaneBlockAhead = false;
