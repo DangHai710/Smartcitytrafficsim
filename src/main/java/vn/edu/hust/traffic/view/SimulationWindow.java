@@ -52,6 +52,9 @@ public class SimulationWindow extends Application {
         configureInput(scene);
         configureMouse();
         resetSimulation();
+        SoundPlayer.setEnabled(settings.isSoundEnabled());
+        SoundPlayer.setVolume(settings.getVolume());
+        SoundPlayer.updateBackgroundMusicState();
 
         primaryStage.setTitle("Smart City Traffic Simulation");
         primaryStage.setScene(scene);
@@ -82,9 +85,12 @@ public class SimulationWindow extends Application {
         controlPanel.setOnSpeedChanged(settings::setSimulationSpeed);
         controlPanel.setOnSoundChanged(value -> {
             settings.setSoundEnabled(value);
-            invokeSoundMethod("updateBackgroundMusicState");
+            SoundPlayer.setEnabled(value);
         });
-        controlPanel.setOnVolumeChanged(settings::setVolume);
+        controlPanel.setOnVolumeChanged(value -> {
+            settings.setVolume(value);
+            SoundPlayer.setVolume(value);
+        });
         controlPanel.setOnSpawnVehicle(type -> {
             if (controllerAdapter.spawnVehicle(type)) {
                 playVehicleSound(type);
