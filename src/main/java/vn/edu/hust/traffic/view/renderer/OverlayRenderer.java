@@ -59,13 +59,14 @@ public class OverlayRenderer {
         gc.fillRoundRect(x, y, 150, 120, 8, 8);
         gc.setFont(Font.font("Consolas", FontWeight.BOLD, 11));
         gc.setFill(Color.WHITE);
-        gc.fillText("Vehicle", x + 12, y + 18);
+        double legendTextX = x + 24;
+        gc.fillText("Vehicle", legendTextX, y + 18);
 
-        drawLegendItem(gc, x + 12, y + 36, Color.web("#2f80ed"), "Car");
-        drawLegendItem(gc, x + 12, y + 54, Color.web("#f2994a"), "Motorbike");
-        drawLegendItem(gc, x + 12, y + 72, Color.web("#2d9c68"), "Bicycle");
-        drawLegendItem(gc, x + 12, y + 90, Color.web("#f6f7f7"), "Ambulance");
-        drawLegendItem(gc, x + 12, y + 108, Color.web("#d83a34"), "FireTruck");
+        drawLegendItem(gc, legendTextX, y + 36, Color.web("#2f80ed"), "Car");
+        drawLegendItem(gc, legendTextX, y + 54, Color.web("#f2994a"), "Motorbike");
+        drawLegendItem(gc, legendTextX, y + 72, Color.web("#2d9c68"), "Bicycle");
+        drawLegendItem(gc, legendTextX, y + 90, Color.web("#f6f7f7"), "Ambulance");
+        drawLegendItem(gc, legendTextX, y + 108, Color.web("#d83a34"), "FireTruck");
     }
 
     private void drawLegendItem(GraphicsContext gc, double x, double y, Color color, String label) {
