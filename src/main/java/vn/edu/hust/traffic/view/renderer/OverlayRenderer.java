@@ -15,36 +15,37 @@ public class OverlayRenderer {
     }
 
     private void drawStatus(GraphicsContext gc, SimulationSnapshot snapshot, SimulationViewSettings settings) {
-        double x = 12;
+        double x = 0;
         double y = 12;
-        double width = 310;
+        double width = 430;
         double height = snapshot.getPhaseIndex() >= 0 ? 92 : 74;
+        double textX = x + 150;
 
-        gc.setFill(Color.color(0.05, 0.06, 0.07, 0.72));
+        gc.setFill(Color.color(0.05, 0.06, 0.07, 0.82));
         gc.fillRoundRect(x, y, width, height, 8, 8);
 
         gc.setFont(Font.font("Consolas", FontWeight.BOLD, 13));
         gc.setFill(Color.WHITE);
-        gc.fillText("Smart City Traffic Simulation", x + 12, y + 20);
+        gc.fillText("Smart City Traffic Simulation", textX, y + 20);
 
         gc.setFont(Font.font("Consolas", FontWeight.NORMAL, 11));
         gc.setFill(Color.web("#d7dde2"));
         gc.fillText("Ban do: " + settings.getMapType()
                 + " | Hien thi: " + settings.getRenderMode()
-                + " | Xe: " + snapshot.getVehicles().size(), x + 12, y + 40);
+                + " | Xe: " + snapshot.getVehicles().size(), textX, y + 40);
         gc.fillText("Dieu khien: " + settings.getControlMode()
                 + " | Toc do: " + String.format("%.1fx", settings.getSimulationSpeed())
-                + " | Luu luong: " + densityLabel(settings.getTrafficDensity()), x + 12, y + 58);
+                + " | Luu luong: " + densityLabel(settings.getTrafficDensity()), textX, y + 58);
 
         if (snapshot.getPhaseIndex() >= 0) {
             gc.setFill(Color.web("#91e3a7"));
             gc.fillText("Phase: " + snapshot.getPhaseIndex()
-                    + " | Con lai: " + (int) Math.ceil(snapshot.getPhaseTimeLeft()) + "s", x + 12, y + 76);
+                    + " | Con lai: " + (int) Math.ceil(snapshot.getPhaseTimeLeft()) + "s", textX, y + 76);
         }
 
         if (settings.getControlMode() == ControlMode.MANUAL) {
             gc.setFill(Color.web("#ffd166"));
-            gc.fillText("Manual: click truc tiep vao den de doi mau", x + 12, y + height - 8);
+            gc.fillText("Manual: click truc tiep vao den de doi mau", textX, y + height - 8);
         }
     }
 
