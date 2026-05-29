@@ -25,26 +25,26 @@ public class OverlayRenderer {
 
         gc.setFont(Font.font("Consolas", FontWeight.BOLD, 13));
         gc.setFill(Color.WHITE);
-        gc.fillText("Smart City Traffic Simulation", x + 12, y + 20);
+        gc.fillText("Smart City Traffic Simulation", x + 120, y + 20);
 
         gc.setFont(Font.font("Consolas", FontWeight.NORMAL, 11));
         gc.setFill(Color.web("#d7dde2"));
         gc.fillText("Ban do: " + settings.getMapType()
                 + " | Hien thi: " + settings.getRenderMode()
-                + " | Xe: " + snapshot.getVehicles().size(), x + 12, y + 40);
+                + " | Xe: " + snapshot.getVehicles().size(), x + 160, y + 40);
         gc.fillText("Dieu khien: " + settings.getControlMode()
                 + " | Toc do: " + String.format("%.1fx", settings.getSimulationSpeed())
-                + " | Luu luong: " + densityLabel(settings.getTrafficDensity()), x + 12, y + 58);
+                + " | Luu luong: " + densityLabel(settings.getTrafficDensity()), x + 180, y + 58);
 
         if (snapshot.getPhaseIndex() >= 0) {
             gc.setFill(Color.web("#91e3a7"));
             gc.fillText("Phase: " + snapshot.getPhaseIndex()
-                    + " | Con lai: " + (int) Math.ceil(snapshot.getPhaseTimeLeft()) + "s", x + 12, y + 76);
+                    + " | Con lai: " + (int) Math.ceil(snapshot.getPhaseTimeLeft()) + "s", x + 140, y + 76);
         }
 
         if (settings.getControlMode() == ControlMode.MANUAL) {
             gc.setFill(Color.web("#ffd166"));
-            gc.fillText("Manual: click truc tiep vao den de doi mau", x + 12, y + height - 8);
+            gc.fillText("Manual: click truc tiep vao den de doi mau", x + 140, y + height - 8);
         }
     }
 
@@ -58,7 +58,7 @@ public class OverlayRenderer {
         gc.fillRoundRect(x, y, 150, 120, 8, 8);
         gc.setFont(Font.font("Consolas", FontWeight.BOLD, 11));
         gc.setFill(Color.WHITE);
-        gc.fillText("Vehicle", x + 12, y + 18);
+        gc.fillText("Vehicle", x + 30, y + 18);
 
         drawLegendItem(gc, x + 12, y + 36, Color.web("#2f80ed"), "Car");
         drawLegendItem(gc, x + 12, y + 54, Color.web("#f2994a"), "Motorbike");
