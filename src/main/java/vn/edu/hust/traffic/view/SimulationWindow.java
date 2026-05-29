@@ -1,6 +1,5 @@
 package vn.edu.hust.traffic.view;
 
-import java.lang.reflect.Method;
 import java.util.OptionalInt;
 
 import javafx.animation.AnimationTimer;
@@ -58,6 +57,8 @@ public class SimulationWindow extends Application {
         primaryStage.show();
         simulationPane.requestFocus();
 
+        SoundPlayer.setVolume(settings.getVolume());
+        SoundPlayer.setEnabled(settings.isSoundEnabled());
         startRenderLoop();
     }
 
@@ -82,9 +83,12 @@ public class SimulationWindow extends Application {
         controlPanel.setOnSpeedChanged(settings::setSimulationSpeed);
         controlPanel.setOnSoundChanged(value -> {
             settings.setSoundEnabled(value);
-            invokeSoundMethod("updateBackgroundMusicState");
+            SoundPlayer.setEnabled(value);
         });
-        controlPanel.setOnVolumeChanged(settings::setVolume);
+        controlPanel.setOnVolumeChanged(value -> {
+            settings.setVolume(value);
+            SoundPlayer.setVolume(value);
+        });
         controlPanel.setOnSpawnVehicle(type -> {
             if (controllerAdapter.spawnVehicle(type)) {
                 playVehicleSound(type);
@@ -194,31 +198,15 @@ public class SimulationWindow extends Application {
             return;
         }
         String lower = type.toLowerCase();
-        if (lower.contains("amb") || lower.contains("emergency")) {
-            if (!invokeSoundMethod("playAmbulance")) {
-                SoundPlayer.playSound("ambulance.mp3");
-            }
+        if (lower.contains("amb") || lower.contains("emergency") || lower.contains("fire")) {
+            SoundPlayer.playAmbulance();
             return;
         }
         if (lower.contains("motor") || lower.contains("bike")) {
-            if (!invokeSoundMethod("playSignal")) {
-                SoundPlayer.playSound("signal.mp3");
-            }
+            SoundPlayer.playSignal();
             return;
         }
-        if (!invokeSoundMethod("playHorn")) {
-            SoundPlayer.playSound("horn.mp3");
-        }
-    }
-
-    private boolean invokeSoundMethod(String methodName) {
-        try {
-            Method method = SoundPlayer.class.getMethod(methodName);
-            method.invoke(null);
-            return true;
-        } catch (ReflectiveOperationException | RuntimeException ex) {
-            return false;
-        }
+        SoundPlayer.playHorn();
     }
 
     public static void main(String[] args) {
