@@ -7,8 +7,10 @@ import vn.edu.hust.traffic.model.map.CrossIntersection;
 import vn.edu.hust.traffic.model.map.Intersection;
 import vn.edu.hust.traffic.model.map.RoundaboutIntersection;
 import vn.edu.hust.traffic.model.vehicle.Ambulance;
+import vn.edu.hust.traffic.model.vehicle.Bus;
 import vn.edu.hust.traffic.model.vehicle.Car;
 import vn.edu.hust.traffic.model.vehicle.FireTruck;
+import vn.edu.hust.traffic.model.vehicle.Motorbike;
 import vn.edu.hust.traffic.model.vehicle.Vehicle;
 import vn.edu.hust.traffic.model.map.ThreeWayIntersection;
 import vn.edu.hust.traffic.model.map.TrafficLight;
@@ -127,6 +129,46 @@ public class TrafficTest {
     }
 
     @Test
+    public void crossIntersectionClearingVehicleDoesNotHardStopForNearConflict() throws Exception {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle clearingVehicle = new Car("ZClearing", 390.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle crossTraffic = new Car("ACrossing", 400.0, 324.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        setBooleanField(clearingVehicle, "passedStopLine", true);
+        setBooleanField(crossTraffic, "passedStopLine", true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(clearingVehicle, crossTraffic));
+
+        clearingVehicle.update(0.02, vehicles, intersections, 1400, 600);
+
+        assertTrue(clearingVehicle.getSpeed() > 0.0, "speed=" + clearingVehicle.getSpeed());
+        assertTrue(clearingVehicle.getX() > 390.0, "x=" + clearingVehicle.getX());
+    }
+
+    @Test
+    public void crossIntersectionSevereConflictLetsEarlierVehicleClearFirst() throws Exception {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle earlier = new Car("Earlier", 390.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle later = new Car("Later", 394.0, 342.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        setBooleanField(earlier, "passedStopLine", true);
+        setBooleanField(later, "passedStopLine", true);
+        setStringField(earlier, "activeIntersectionId", "cross1");
+        setStringField(later, "activeIntersectionId", "cross1");
+        setIntField(earlier, "activeIntersectionEntryLightIdx", 0);
+        setIntField(later, "activeIntersectionEntryLightIdx", 2);
+        setLongField(earlier, "activeIntersectionEntryOrder", 1L);
+        setLongField(later, "activeIntersectionEntryOrder", 2L);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(earlier, later));
+
+        earlier.update(0.05, vehicles, intersections, 1400, 600);
+        later.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(earlier.getSpeed() > 0.0, "earlier speed=" + earlier.getSpeed());
+        assertTrue(earlier.getX() > 390.0, "earlier x=" + earlier.getX());
+        assertEquals(0.0, later.getSpeed(), 0.01);
+    }
+
+    @Test
     public void vehicleAlreadyInsideIntersectionDoesNotChangeLaneToYield() {
         List<TrafficLight> lights = greenLights(4);
         List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
@@ -166,6 +208,22 @@ public class TrafficTest {
 
         assertTrue(clearingVehicle.getSpeed() > 0.0, "speed=" + clearingVehicle.getSpeed());
         assertTrue(clearingVehicle.getX() > 1160.0, "x=" + clearingVehicle.getX());
+    }
+
+    @Test
+    public void threeWayClearingVehicleDoesNotHardStopForNearConflict() throws Exception {
+        List<TrafficLight> lights = greenLights(3);
+        List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
+        Vehicle clearingVehicle = new Car("ZClearing", 1190.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle crossingVehicle = new Car("ACrossing", 1200.0, 324.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        setBooleanField(clearingVehicle, "passedStopLine", true);
+        setBooleanField(crossingVehicle, "passedStopLine", true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(clearingVehicle, crossingVehicle));
+
+        clearingVehicle.update(0.02, vehicles, intersections, 1400, 600);
+
+        assertTrue(clearingVehicle.getSpeed() > 0.0, "speed=" + clearingVehicle.getSpeed());
+        assertTrue(clearingVehicle.getX() > 1190.0, "x=" + clearingVehicle.getX());
     }
 
     @Test
@@ -388,6 +446,38 @@ public class TrafficTest {
 
         assertEquals(0.0, enteringVehicle.getSpeed(), 0.01);
         assertEquals(330.0, enteringVehicle.getY(), 0.01);
+    }
+
+    @Test
+    public void crossIntersectionVehicleWaitsAtStopLineForClearingCrossTraffic() throws Exception {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
+        Vehicle enteringVehicle = new Car("Entering", 260.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle clearingVehicle = new Car("Clearing", 390.0, 250.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        setBooleanField(clearingVehicle, "passedStopLine", true);
+        setStringField(clearingVehicle, "activeIntersectionId", "cross1");
+        List<Vehicle> vehicles = new ArrayList<>(List.of(enteringVehicle, clearingVehicle));
+
+        enteringVehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertEquals(0.0, enteringVehicle.getSpeed(), 0.01);
+        assertEquals(260.0, enteringVehicle.getX(), 0.01);
+    }
+
+    @Test
+    public void threeWayVehicleWaitsAtStopLineForClearingCrossTraffic() throws Exception {
+        List<TrafficLight> lights = greenLights(3);
+        List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
+        Vehicle enteringVehicle = new Car("Entering", 1060.0, 340.0, 80.0, 0.0, 26, 13, false);
+        Vehicle clearingVehicle = new Car("Clearing", 1190.0, 250.0, 80.0, Math.PI / 2.0, 26, 13, false);
+        setBooleanField(clearingVehicle, "passedStopLine", true);
+        setStringField(clearingVehicle, "activeIntersectionId", "three1");
+        List<Vehicle> vehicles = new ArrayList<>(List.of(enteringVehicle, clearingVehicle));
+
+        enteringVehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertEquals(0.0, enteringVehicle.getSpeed(), 0.01);
+        assertEquals(1060.0, enteringVehicle.getX(), 0.01);
     }
 
     @Test
@@ -682,6 +772,69 @@ public class TrafficTest {
     }
 
     @Test
+    public void shortSmoothTurnInsideIntersectionCompletesInsteadOfDeadlocking() throws Exception {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, -500.0, lights));
+        Vehicle turning = new Car("Turning", 385.0, -483.6, 80.0, Math.PI / 2.0, 26, 13, false);
+        Vehicle waitingBehind = new Car("Behind", 385.0, -516.1, 0.0, Math.PI / 2.0, 26, 13, false);
+        turning.setTurnIntention(1);
+        waitingBehind.setTurnIntention(1);
+        setBooleanField(turning, "passedStopLine", true);
+        setStringField(turning, "activeIntersectionId", "cross1");
+        setIntField(turning, "activeIntersectionEntryLightIdx", 2);
+        setLongField(turning, "activeIntersectionEntryOrder", 1L);
+        setBooleanField(turning, "isTurningSmoothly", true);
+        setDoubleField(turning, "smoothTurnStartX", 385.0);
+        setDoubleField(turning, "smoothTurnStartY", -483.6);
+        setDoubleField(turning, "smoothTurnEndX", 385.0);
+        setDoubleField(turning, "smoothTurnEndY", -485.0);
+        setDoubleField(turning, "smoothTurnStartDirection", Math.PI / 2.0);
+        setDoubleField(turning, "smoothTurnEndDirection", 0.0);
+        setDoubleField(turning, "smoothTurnElapsed", 0.18);
+        setDoubleField(turning, "smoothTurnDuration", 0.38);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(turning, waitingBehind));
+
+        for (int i = 0; i < 6 && !turning.hasTurned(); i++) {
+            turning.update(0.05, vehicles, intersections, 1400, 600);
+        }
+
+        assertTrue(turning.hasTurned(), "speed=" + turning.getSpeed()
+                + ", x=" + turning.getX() + ", y=" + turning.getY());
+        assertEquals(0.0, turning.getDirection(), 0.01);
+    }
+
+    @Test
+    public void shortSmoothDiagonalEntryIgnoresCloseVehicleBehindPath() throws Exception {
+        Vehicle turning = new Motorbike("Turning", 1425.9, 229.9, 80.0, -2.80, false);
+        Vehicle closeBehind = new Motorbike("Behind", 1431.0, 235.5, 0.0, Math.PI, false);
+        turning.setTurnIntention(2);
+        closeBehind.setTurnIntention(2);
+        setBooleanField(turning, "passedStopLine", true);
+        setBooleanField(turning, "isTurningDiagonally", true);
+        setBooleanField(turning, "isTurningSmoothly", true);
+        setStringField(turning, "activeIntersectionId", "three1");
+        setIntField(turning, "activeIntersectionEntryLightIdx", 1);
+        setLongField(turning, "activeIntersectionEntryOrder", 1L);
+        setDoubleField(turning, "smoothTurnStartX", 1431.0);
+        setDoubleField(turning, "smoothTurnStartY", 235.0);
+        setDoubleField(turning, "smoothTurnEndX", 1419.1771746185611);
+        setDoubleField(turning, "smoothTurnEndY", 223.1771746185609);
+        setDoubleField(turning, "smoothTurnStartDirection", Math.PI);
+        setDoubleField(turning, "smoothTurnEndDirection", -Math.PI * 3.0 / 4.0);
+        setDoubleField(turning, "smoothTurnElapsed", 0.10);
+        setDoubleField(turning, "smoothTurnDuration", 0.22);
+        setDoubleField(turning, "diagonalTurnCenterX", 1200.0);
+        setDoubleField(turning, "diagonalTurnCenterY", 300.0);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(turning, closeBehind));
+
+        turning.update(0.05, vehicles, List.of(), 1400, 600);
+
+        assertTrue(turning.getSpeed() > 0.0, "speed=" + turning.getSpeed());
+        assertTrue(turning.getX() < 1425.9, "x=" + turning.getX());
+        assertTrue(turning.getY() < 229.9, "y=" + turning.getY());
+    }
+
+    @Test
     public void diagonalRightTurnVehicleSlowsBehindVehicleOnTurnRoad() throws Exception {
         Vehicle follower = new Car("Follower", 300.0, 340.0, 80.0, Math.PI / 4.0, 26, 13, false);
         Vehicle leader = new Car("Leader", 330.0, 370.0, 0.0, Math.PI / 4.0, 26, 13, false);
@@ -725,6 +878,116 @@ public class TrafficTest {
     }
 
     @Test
+    public void diagonalRightTurnVehicleCrawlsBehindSameStreamLeaderWhenGapIsPositive() throws Exception {
+        Vehicle follower = new Motorbike("Follower", 483.3, 85.6, 80.0, Math.PI, false);
+        Vehicle leader = new Car("Leader", 465.0, 66.2, 0.0, Math.PI, 26, 13, false);
+        follower.setTurnIntention(2);
+        leader.setTurnIntention(2);
+        setDoubleField(follower, "direction", -Math.PI * 3.0 / 4.0);
+        setDoubleField(leader, "direction", -Math.PI / 2.0);
+        setBooleanField(follower, "passedStopLine", true);
+        setBooleanField(follower, "isTurningDiagonally", true);
+        setStringField(follower, "activeIntersectionId", "cross1");
+        setIntField(follower, "activeIntersectionEntryLightIdx", 1);
+        setLongField(follower, "activeIntersectionEntryOrder", 1L);
+        setDoubleField(follower, "diagonalTurnCenterX", 400.0);
+        setDoubleField(follower, "diagonalTurnCenterY", 300.0);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(follower, leader));
+
+        follower.update(0.05, vehicles, List.of(), 1400, 600);
+
+        assertTrue(follower.getSpeed() > 0.0, "speed=" + follower.getSpeed());
+        assertTrue(follower.getX() < 483.3, "x=" + follower.getX());
+        assertTrue(follower.getY() < 85.6, "y=" + follower.getY());
+    }
+
+    @Test
+    public void vehicleDoesNotFollowTurnVehicleFromDifferentIntersection() throws Exception {
+        List<TrafficLight> lights = greenLights(4);
+        List<Intersection> intersections = List.of(
+                new CrossIntersection("cross1", 400.0, 300.0, lights),
+                new CrossIntersection("cross2", 400.0, -500.0, greenLights(4)));
+        Vehicle nextIntersectionVehicle = new Car("Next", 465.0, 66.2, 80.0, Math.PI, 26, 13, false);
+        Vehicle oldIntersectionTurner = new Motorbike("Old", 479.1, 81.4, 0.0, Math.PI, false);
+        nextIntersectionVehicle.setTurnIntention(2);
+        oldIntersectionTurner.setTurnIntention(2);
+        setDoubleField(nextIntersectionVehicle, "direction", -Math.PI / 2.0);
+        setDoubleField(oldIntersectionTurner, "direction", -Math.PI * 3.0 / 4.0);
+        setStringField(nextIntersectionVehicle, "activeIntersectionId", "cross2");
+        setIntField(nextIntersectionVehicle, "activeIntersectionEntryLightIdx", 3);
+        setStringField(oldIntersectionTurner, "activeIntersectionId", "cross1");
+        setIntField(oldIntersectionTurner, "activeIntersectionEntryLightIdx", 1);
+        setBooleanField(oldIntersectionTurner, "passedStopLine", true);
+        setBooleanField(oldIntersectionTurner, "isTurningDiagonally", true);
+        setDoubleField(oldIntersectionTurner, "diagonalTurnCenterX", 400.0);
+        setDoubleField(oldIntersectionTurner, "diagonalTurnCenterY", 300.0);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(nextIntersectionVehicle, oldIntersectionTurner));
+
+        nextIntersectionVehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(nextIntersectionVehicle.getSpeed() > 0.0, "speed=" + nextIntersectionVehicle.getSpeed());
+        assertTrue(nextIntersectionVehicle.getY() < 66.2, "y=" + nextIntersectionVehicle.getY());
+    }
+
+    @Test
+    public void rightTurnVehicleDoesNotEnterDiagonalBranchWhenEntryIsBlocked() throws Exception {
+        List<TrafficLight> lights = greenLights(3);
+        List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
+        Vehicle turning = new Car("Turning", 1425.0, 235.0, 80.0, Math.PI, 26, 13, false);
+        Vehicle stoppedAhead = new Car("Stopped", 1405.0, 235.0, 0.0, Math.PI, 26, 13, false);
+        turning.setTurnIntention(2);
+        stoppedAhead.setTurnIntention(0);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(turning, stoppedAhead));
+
+        turning.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertFalse(getBooleanField(turning, "isTurningDiagonally"));
+        assertEquals(Math.PI, turning.getDirection(), 0.01);
+    }
+
+    @Test
+    public void rightTurnVehicleDoesNotEnterDiagonalBranchWhenTurnPathIsBlocked() throws Exception {
+        List<TrafficLight> lights = greenLights(3);
+        List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
+        Vehicle turning = new Car("Turning", 1425.0, 235.0, 80.0, Math.PI, 26, 13, false);
+        Vehicle stoppedOnBranch = new Car("StoppedBranch", 1415.0, 245.0, 0.0, 0.0, 26, 13, false);
+        turning.setTurnIntention(2);
+        stoppedOnBranch.setTurnIntention(0);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(turning, stoppedOnBranch));
+
+        turning.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertFalse(getBooleanField(turning, "isTurningDiagonally"));
+        assertEquals(0.0, turning.getSpeed(), 0.01);
+        assertEquals(Math.PI, turning.getDirection(), 0.01);
+    }
+
+    @Test
+    public void diagonalRightTurnVehicleCrawlsPastDifferentStreamBlockerInsideIntersection() throws Exception {
+        Vehicle turning = new Car("Turning", 1414.7, 246.8, 80.0, -Math.PI * 3.0 / 4.0, 26, 13, false);
+        Vehicle stoppedDifferentStream = new Car("Stopped", 1416.4, 235.0, 0.0, Math.PI, 26, 13, false);
+        turning.setTurnIntention(2);
+        stoppedDifferentStream.setTurnIntention(0);
+        setBooleanField(turning, "passedStopLine", true);
+        setBooleanField(turning, "isTurningDiagonally", true);
+        setStringField(turning, "activeIntersectionId", "three1");
+        setIntField(turning, "activeIntersectionEntryLightIdx", 1);
+        setLongField(turning, "activeIntersectionEntryOrder", 1L);
+        setStringField(stoppedDifferentStream, "activeIntersectionId", "three1");
+        setIntField(stoppedDifferentStream, "activeIntersectionEntryLightIdx", 1);
+        setLongField(stoppedDifferentStream, "activeIntersectionEntryOrder", 2L);
+        setDoubleField(turning, "diagonalTurnCenterX", 1200.0);
+        setDoubleField(turning, "diagonalTurnCenterY", 300.0);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(turning, stoppedDifferentStream));
+
+        turning.update(0.05, vehicles, List.of(), 1400, 600);
+
+        assertTrue(turning.getSpeed() > 0.0, "speed=" + turning.getSpeed());
+        assertTrue(turning.getX() < 1414.7, "x=" + turning.getX());
+        assertTrue(turning.getY() < 246.8, "y=" + turning.getY());
+    }
+
+    @Test
     public void vehicleLeavingTurnKeepsMovingPastOldIntersectionConflict() throws Exception {
         List<TrafficLight> lights = greenLights(4);
         List<Intersection> intersections = List.of(new CrossIntersection("cross1", 400.0, 300.0, lights));
@@ -754,6 +1017,22 @@ public class TrafficTest {
 
         assertTrue(exiting.getSpeed() > 0.0, "speed=" + exiting.getSpeed());
         assertTrue(exiting.getX() > 390.0, "x=" + exiting.getX());
+    }
+
+    @Test
+    public void threeWayBranchMergeCrawlsWhenGapIsSmallButPositive() throws Exception {
+        List<TrafficLight> lights = greenLights(3);
+        List<Intersection> intersections = List.of(new ThreeWayIntersection("three1", 1200.0, 300.0, lights));
+        Vehicle merging = new Car("Merge", 1190.0, 315.0, 80.0, 0.0, 26, 13, false);
+        Vehicle leader = new Car("Leader", 1222.0, 315.0, 0.0, 0.0, 26, 13, false);
+        setBooleanField(merging, "hasTurned", true);
+        setDoubleField(merging, "turnExitClearanceTime", 0.6);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(merging, leader));
+
+        merging.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(merging.getSpeed() > 0.0, "speed=" + merging.getSpeed());
+        assertTrue(merging.getX() > 1190.0, "x=" + merging.getX());
     }
 
     @Test
@@ -893,6 +1172,22 @@ public class TrafficTest {
     }
 
     @Test
+    public void fiveWayRoundaboutApproachOvershootCannotCrossGreenIsland() throws Exception {
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
+        List<Vehicle> vehicles = new ArrayList<>();
+        Vehicle vehicle = new Car("Car1", 785.0, 285.0, 120.0, Math.PI, 26, 13, false);
+        setTargetExitIndex(vehicle, 2);
+        vehicles.add(vehicle);
+
+        vehicle.update(1.0, vehicles, intersections, 1400, 600);
+
+        double radius = Math.hypot(vehicle.getX() - 600.0, vehicle.getY() - 300.0);
+        assertTrue(vehicle.insideRoundabout, "vehicle should be captured by roundabout");
+        assertTrue(radius >= 112.0 && radius <= 166.0, "radius=" + radius);
+        assertNotEquals(Math.PI, vehicle.getDirection(), 0.01);
+    }
+
+    @Test
     public void fiveWayRoundaboutEntryDoesNotTeleportAtMergePoint() throws Exception {
         List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
         List<Vehicle> vehicles = new ArrayList<>();
@@ -912,6 +1207,69 @@ public class TrafficTest {
 
         assertTrue(vehicle.insideRoundabout);
         assertTrue(maxStep < 15.0, "maxStep=" + maxStep);
+    }
+
+    @Test
+    public void roundaboutEntryDoesNotYieldToPriorityBehindSameApproach() throws Exception {
+        List<Intersection> intersections = List.of(new RoundaboutIntersection("roundabout1", 600.0, 300.0, 100.0));
+        Vehicle entering = new Bus("Bus", 782.6, 235.0, 80.0, Math.PI);
+        Vehicle priorityBehind = new Ambulance("Amb", 830.3, 260.0, 0.0, Math.PI, true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(entering, priorityBehind));
+
+        entering.update(0.05, vehicles, intersections, 1400, 600);
+
+        assertTrue(entering.getSpeed() > 0.0, "speed=" + entering.getSpeed());
+        assertTrue(entering.getX() < 782.6, "x=" + entering.getX());
+    }
+
+    @Test
+    public void roundaboutExitShortSmoothIgnoresCloseVehicleBehindPath() throws Exception {
+        Vehicle exiting = new Car("Exit", 753.2, 236.1, 80.0, -1.80, 26, 13, false);
+        Vehicle behind = new Car("Behind", 749.1, 227.0, 0.0, -1.40, 26, 13, false);
+        setBooleanField(exiting, "exitedRoundabout", true);
+        setBooleanField(exiting, "isTurningSmoothly", true);
+        setDoubleField(exiting, "smoothTurnStartX", 752.9757485084084);
+        setDoubleField(exiting, "smoothTurnStartY", 235.7434757679132);
+        setDoubleField(exiting, "smoothTurnEndX", 753.9688849983191);
+        setDoubleField(exiting, "smoothTurnEndY", 237.95499655593213);
+        setDoubleField(exiting, "smoothTurnStartDirection", -1.80);
+        setDoubleField(exiting, "smoothTurnEndDirection", -Math.PI / 4.0);
+        setDoubleField(exiting, "smoothTurnElapsed", 0.15);
+        setDoubleField(exiting, "smoothTurnDuration", 0.55);
+        setBooleanField(behind, "exitedRoundabout", true);
+        setBooleanField(behind, "isTurningSmoothly", true);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(exiting, behind));
+
+        exiting.update(0.05, vehicles, List.of(), 1400, 600);
+
+        assertTrue(exiting.getSpeed() > 0.0, "speed=" + exiting.getSpeed());
+        assertTrue(exiting.getY() > 236.1, "y=" + exiting.getY());
+    }
+
+    @Test
+    public void roundaboutExitSmoothVehicleWithMoreProgressClearsOverlap() throws Exception {
+        Vehicle exiting = new Motorbike("Exit", 662.3, 146.2, 80.0, -2.71, false);
+        Vehicle closeOverlap = new Car("Overlap", 668.8, 154.3, 0.0, -2.19, 26, 13, false);
+        setBooleanField(exiting, "exitedRoundabout", true);
+        setBooleanField(exiting, "isTurningSmoothly", true);
+        setDoubleField(exiting, "smoothTurnStartX", 662.0321164808353);
+        setDoubleField(exiting, "smoothTurnStartY", 146.10881421275408);
+        setDoubleField(exiting, "smoothTurnEndX", 665.0);
+        setDoubleField(exiting, "smoothTurnEndY", 147.2551146519138);
+        setDoubleField(exiting, "smoothTurnStartDirection", -2.71);
+        setDoubleField(exiting, "smoothTurnEndDirection", -Math.PI / 2.0);
+        setDoubleField(exiting, "smoothTurnElapsed", 0.50);
+        setDoubleField(exiting, "smoothTurnDuration", 0.55);
+        setBooleanField(closeOverlap, "exitedRoundabout", true);
+        setBooleanField(closeOverlap, "isTurningSmoothly", true);
+        setDoubleField(closeOverlap, "smoothTurnElapsed", 0.10);
+        setDoubleField(closeOverlap, "smoothTurnDuration", 0.55);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(exiting, closeOverlap));
+
+        exiting.update(0.05, vehicles, List.of(), 1400, 600);
+
+        assertTrue(exiting.getSpeed() > 0.0, "speed=" + exiting.getSpeed());
+        assertTrue(exiting.hasTurned(), "exiting vehicle should finish clearing the exit lane");
     }
 
     @Test
@@ -982,6 +1340,36 @@ public class TrafficTest {
         assertTrue(vehicle.getY() > -500.0, "x=" + vehicle.getX() + ", y=" + vehicle.getY());
     }
 
+    @Test
+    public void roadNetworkRoundaboutRecapturesExitedVehicleBeforeCrossingGreenIsland() throws Exception {
+        double[] roadNetworkAngles = new double[] {
+                0,
+                -Math.PI / 2,
+                Math.PI,
+                Math.PI / 2,
+                -Math.PI / 4
+        };
+        RoundaboutIntersection roundabout =
+                new RoundaboutIntersection("roundabout1", 1200.0, -500.0, 100.0, roadNetworkAngles);
+        List<Intersection> intersections = List.of(
+                new CrossIntersection("cross2", 400.0, -500.0, greenLights(4)),
+                new ThreeWayIntersection("three1", 1200.0, 300.0, greenLights(3)),
+                roundabout);
+        Vehicle vehicle = new Motorbike("Bike", 1215.0, -502.0, 80.0, Math.PI, false);
+        setBooleanField(vehicle, "exitedRoundabout", true);
+        setBooleanField(vehicle, "hasTurned", true);
+        setIntField(vehicle, "spawnSourceIndex", 3);
+        setTargetExitIndex(vehicle, 2);
+        List<Vehicle> vehicles = new ArrayList<>(List.of(vehicle));
+
+        vehicle.update(0.05, vehicles, intersections, 1400, 600);
+
+        double radius = Math.hypot(vehicle.getX() - roundabout.getX(), vehicle.getY() - roundabout.getY());
+        assertTrue(vehicle.insideRoundabout, "vehicle should be re-captured by roundabout");
+        assertFalse(getBooleanField(vehicle, "exitedRoundabout"));
+        assertTrue(radius >= 112.0, "radius=" + radius);
+    }
+
     private int turnIntention(Object spawnPoint) throws Exception {
         Method turnIntention = spawnPoint.getClass().getDeclaredMethod("turnIntention");
         turnIntention.setAccessible(true);
@@ -1000,6 +1388,12 @@ public class TrafficTest {
         field.setBoolean(vehicle, value);
     }
 
+    private boolean getBooleanField(Vehicle vehicle, String fieldName) throws Exception {
+        Field field = Vehicle.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.getBoolean(vehicle);
+    }
+
     private void setDoubleField(Vehicle vehicle, String fieldName, double value) throws Exception {
         Field field = Vehicle.class.getDeclaredField(fieldName);
         field.setAccessible(true);
@@ -1010,6 +1404,12 @@ public class TrafficTest {
         Field field = Vehicle.class.getDeclaredField(fieldName);
         field.setAccessible(true);
         field.setInt(vehicle, value);
+    }
+
+    private void setLongField(Vehicle vehicle, String fieldName, long value) throws Exception {
+        Field field = Vehicle.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.setLong(vehicle, value);
     }
 
     private void setStringField(Vehicle vehicle, String fieldName, String value) throws Exception {
